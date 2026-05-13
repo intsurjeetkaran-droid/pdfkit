@@ -1,0 +1,297 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PDFKit — Guest-First PDF Platform
+# Services: api-gateway, pdf-service, conversion-service, storage-service,
+#           queue-service, organization-service
+# Infrastructure: MySQL 8, Redis 7
+# Removed: auth-service, user-service (no auth required for PDF operations)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── MySQL 8 ──────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8
+    container_name: pdfkit-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pdfkit
+    ports:
+      - '3307:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis 7 ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pdfkit-redis
+    restart: unless-stopped
+    ports:
+      - '6380:6379'
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API Gateway — Port 3000 ───────────────────────────────────────────────────
+  # Single entry point. Pure proxy — no auth enforcement.
+  # Logs every proxied request with latency (→ service, ← response ms).
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: pdfkit-api-gateway
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      API_GATEWAY_PORT: 3000
+      PDF_SERVICE_URL: http://pdf-service:3001
+      CONVERSION_SERVICE_URL: http://conversion-service:3002
+      STORAGE_SERVICE_URL: http://storage-service:3003
+      QUEUE_SERVICE_URL: http://queue-service:3006
+      ORGANIZATION_SERVICE_URL: http://organization-service:3007
+      SECURITY_SERVICE_URL: http://security-service:3008
+      METADATA_SERVICE_URL: http://metadata-service:3009
+      LOG_LEVEL: info
+      TEST_MODE: "true"
+      ALLOWED_ORIGINS: "*"
+    depends_on:
+      - redis
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── PDF Service — Port 3001 ───────────────────────────────────────────────────
+  # merge, split, rotate, extract, delete-pages, reorder, watermark
+  # All operations log step-by-step timing via Timer utility.
+  pdf-service:
+    build:
+      context: ./pdf-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-pdf-service
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: production
+      PDF_SERVICE_PORT: 3001
+      LOG_LEVEL: info
+    volumes:
+      - pdf_uploads:/app/src/uploads
+      - pdf_outputs:/app/outputs
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Conversion Service — Port 3002 ────────────────────────────────────────────
+  # word-to-pdf, excel-to-pdf, ppt-to-pdf, pdf-to-image, image-to-pdf,
+  # compress, pdf-to-word
+  # Requires: LibreOffice, Ghostscript, poppler-utils (installed in Dockerfile)
+  # Each external tool call logs its own elapsed time.
+  conversion-service:
+    build:
+      context: ./conversion-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-conversion-service
+    restart: unless-stopped
+    ports:
+      - '3002:3002'
+    environment:
+      NODE_ENV: production
+      CONVERSION_SERVICE_PORT: 3002
+      LOG_LEVEL: info
+    volumes:
+      - conversion_uploads:/app/src/uploads
+      - conversion_outputs:/app/outputs
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Storage Service — Port 3003 ───────────────────────────────────────────────
+  # Guest upload-temp, download, delete, auto-cleanup (1-hour TTL)
+  # No auth required — fully anonymous.
+  storage-service:
+    build:
+      context: ./storage-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-storage-service
+    restart: unless-stopped
+    ports:
+      - '3003:3003'
+    environment:
+      NODE_ENV: production
+      STORAGE_SERVICE_PORT: 3003
+      DATABASE_URL: mysql://root:root@mysql:3306/pdfkit
+      FILE_TTL_MS: 3600000        # 1 hour
+      CLEANUP_INTERVAL_MS: 3600000
+      LOG_LEVEL: info
+      STORAGE_BASE_URL: http://localhost:3000
+    volumes:
+      - storage_temp:/app/storage/temp
+      - storage_processed:/app/storage/processed
+      - storage_cache:/app/storage/cache
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Queue Service — Port 3006 ─────────────────────────────────────────────────
+  # BullMQ workers + Bull Board dashboard at /admin/queues
+  # Workers: pdf, conversion, cleanup, organization, security, metadata
+  queue-service:
+    build:
+      context: ./queue-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-queue-service
+    restart: unless-stopped
+    ports:
+      - '3006:3006'
+    environment:
+      NODE_ENV: production
+      QUEUE_SERVICE_PORT: 3006
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: info
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3006/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Organization Service — Port 3007 ──────────────────────────────────────────
+  # reorder, duplicate, remove pages
+  organization-service:
+    build:
+      context: ./organization-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-organization-service
+    restart: unless-stopped
+    ports:
+      - '3007:3007'
+    environment:
+      NODE_ENV: production
+      ORGANIZATION_SERVICE_PORT: 3007
+      LOG_LEVEL: info
+    volumes:
+      - organization_uploads:/app/src/uploads
+      - organization_outputs:/app/outputs
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3007/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Security Service — Port 3008 ──────────────────────────────────────────────
+  # protect (add password), unlock (remove password), remove-metadata
+  # Requires: qpdf (installed in Dockerfile)
+  security-service:
+    build:
+      context: ./security-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-security-service
+    restart: unless-stopped
+    ports:
+      - '3008:3008'
+    environment:
+      NODE_ENV: production
+      SECURITY_SERVICE_PORT: 3008
+      LOG_LEVEL: info
+    volumes:
+      - security_uploads:/app/src/uploads
+      - security_outputs:/app/outputs
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3008/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Metadata Service — Port 3009 ──────────────────────────────────────────────
+  # info (full metadata), page-count (fast), preview (page thumbnail PNG)
+  # Requires: poppler-utils/pdftoppm (installed in Dockerfile)
+  metadata-service:
+    build:
+      context: ./metadata-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-metadata-service
+    restart: unless-stopped
+    ports:
+      - '3009:3009'
+    environment:
+      NODE_ENV: production
+      METADATA_SERVICE_PORT: 3009
+      LOG_LEVEL: info
+    volumes:
+      - metadata_uploads:/app/src/uploads
+      - metadata_outputs:/app/outputs
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3009/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Named volumes — persisted across container restarts
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  mysql_data:
+  pdf_uploads:
+  pdf_outputs:
+  conversion_uploads:
+  conversion_outputs:
+  storage_temp:
+  storage_processed:
+  storage_cache:
+  organization_uploads:
+  organization_outputs:
+  security_uploads:
+  security_outputs:
+  metadata_uploads:
+  metadata_outputs:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal Docker network — services communicate by container name
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  pdfkit-network:
+    driver: bridge

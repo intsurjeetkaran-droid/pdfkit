@@ -1,0 +1,1099 @@
+# PDFKit Backend Microservices — Complete Master Guide
+
+# 1. Project Goal
+
+Build a scalable PDF operations backend using:
+
+* Microservices architecture
+* Node.js
+* Express.js
+* MySQL/MariaDB
+* Redis
+* BullMQ
+* Docker
+* Global logging system
+* Proper commenting strategy
+* Clean architecture
+* Production-ready folder structure
+
+This backend will support:
+
+* Merge PDF
+* Split PDF
+* Compress PDF
+* Image ↔ PDF
+* Office ↔ PDF
+* Queue jobs
+* File storage
+* Authentication
+* Background workers
+
+---
+
+# 2. Final Backend Architecture
+
+```text
+Client (Next.js Frontend)
+        |
+        v
+API Gateway
+        |
+--------------------------------------------------
+|         |          |          |                |
+Auth    PDF       Convert    Storage         User
+Svc     Svc         Svc       Svc            Svc
+                     |
+                 Queue Service
+                     |
+        --------------------------------
+        |               |              |
+   LibreOffice      Compress      Cleanup
+      Worker          Worker       Worker
+```
+
+---
+
+# 3. Recommended Tech Stack
+
+| Purpose           | Tech             |
+| ----------------- | ---------------- |
+| Runtime           | Node.js          |
+| Framework         | Express.js       |
+| Database          | MySQL / MariaDB  |
+| ORM               | Prisma           |
+| Queue             | BullMQ           |
+| Cache             | Redis            |
+| File Upload       | Multer           |
+| Logging           | Winston + Morgan |
+| Validation        | Zod              |
+| Auth              | JWT              |
+| PDF Library       | pdf-lib          |
+| PDF Generation    | PDFKit           |
+| Image Processing  | sharp            |
+| Office Conversion | LibreOffice      |
+| Compression       | Ghostscript      |
+| Containerization  | Docker           |
+| Reverse Proxy     | Nginx            |
+
+---
+
+# 4. Global Development Rules
+
+# Coding Standards
+
+Always:
+
+* Use TypeScript
+* Use async/await
+* Use try/catch
+* Validate all inputs
+* Never trust uploaded files
+* Keep controllers small
+* Keep business logic in services
+* Use environment variables
+* Write meaningful logs
+
+---
+
+# Commenting Rules
+
+Use comments only when necessary.
+
+Good comments:
+
+```ts
+// Generate merged PDF from uploaded files
+```
+
+Bad comments:
+
+```ts
+// Increment i
+i++
+```
+
+---
+
+# Logging Rules
+
+Every service must log:
+
+* Requests
+* Errors
+* Warnings
+* Job completion
+* Performance timing
+* File operations
+* Queue failures
+
+Never log:
+
+* Passwords
+* Tokens
+* Sensitive files
+
+---
+
+# 5. Root Monorepo Structure
+
+```text
+backend/
+│
+├── api-gateway/
+├── auth-service/
+├── pdf-service/
+├── conversion-service/
+├── storage-service/
+├── user-service/
+├── queue-service/
+│
+├── workers/
+│   ├── libreoffice-worker/
+│   ├── compression-worker/
+│   └── cleanup-worker/
+│
+├── shared/
+│   ├── config/
+│   ├── logger/
+│   ├── middleware/
+│   ├── utils/
+│   ├── constants/
+│   └── types/
+│
+├── docker-compose.yml
+├── .env
+└── README.md
+```
+
+---
+
+# 6. Shared Logger System (IMPORTANT)
+
+# Why Central Logging Matters
+
+Global logging allows:
+
+* Easier debugging
+* Production monitoring
+* Better error tracking
+* Request tracing
+* Scalability
+
+---
+
+# Install Logger Dependencies
+
+```bash
+npm install winston morgan
+```
+
+---
+
+# Shared Logger Structure
+
+```text
+shared/logger/
+├── logger.ts
+├── requestLogger.ts
+└── errorLogger.ts
+```
+
+---
+
+# logger.ts
+
+```ts
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'info',
+
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+
+  defaultMeta: {
+    service: 'pdfkit-backend'
+  },
+
+  transports: [
+    new winston.transports.Console(),
+
+    new winston.transports.File({
+      filename: 'logs/error.log',
+      level: 'error'
+    }),
+
+    new winston.transports.File({
+      filename: 'logs/combined.log'
+    })
+  ]
+});
+
+export default logger;
+```
+
+---
+
+# requestLogger.ts
+
+```ts
+import morgan from 'morgan';
+import logger from './logger';
+
+const stream = {
+  write: (message: string) => {
+    logger.info(message.trim());
+  }
+};
+
+export const requestLogger = morgan('combined', { stream });
+```
+
+---
+
+# Example Logging Usage
+
+```ts
+logger.info('PDF merge started');
+
+logger.warn('Large file uploaded');
+
+logger.error('Compression failed', {
+  error: error.message
+});
+```
+
+---
+
+# 7. API Gateway Service
+
+# Purpose
+
+Single entry point.
+
+Responsibilities:
+
+* Route requests
+* Authentication
+* Rate limiting
+* Request logging
+* Security headers
+
+---
+
+# Folder Structure
+
+```text
+api-gateway/
+├── src/
+│   ├── routes/
+│   ├── middleware/
+│   ├── config/
+│   ├── app.ts
+│   └── server.ts
+```
+
+---
+
+# Install Dependencies
+
+```bash
+npm install express cors helmet morgan express-rate-limit axios dotenv
+```
+
+---
+
+# app.ts
+
+```ts
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
+import { requestLogger } from '../../shared/logger/requestLogger';
+
+const app = express();
+
+app.use(cors());
+app.use(helmet());
+app.use(express.json());
+app.use(requestLogger);
+
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100
+}));
+
+export default app;
+```
+
+---
+
+# 8. Auth Service
+
+# Responsibilities
+
+* Register user
+* Login user
+* JWT generation
+* Password hashing
+
+---
+
+# Install Dependencies
+
+```bash
+npm install bcrypt jsonwebtoken zod
+```
+
+---
+
+# JWT Utility
+
+```ts
+import jwt from 'jsonwebtoken';
+
+export const generateToken = (userId: string) => {
+  return jwt.sign(
+    { userId },
+    process.env.JWT_SECRET!,
+    { expiresIn: '7d' }
+  );
+};
+```
+
+---
+
+# Password Hashing
+
+```ts
+import bcrypt from 'bcrypt';
+
+export const hashPassword = async (password: string) => {
+  return bcrypt.hash(password, 10);
+};
+```
+
+---
+
+# 9. PDF Service
+
+# Responsibilities
+
+* Merge PDFs
+* Split PDFs
+* Rotate pages
+* Delete pages
+* Extract pages
+
+---
+
+# Install Dependencies
+
+```bash
+npm install pdf-lib multer
+```
+
+---
+
+# Folder Structure
+
+```text
+pdf-service/
+├── src/
+│   ├── controllers/
+│   ├── services/
+│   ├── routes/
+│   ├── utils/
+│   └── uploads/
+```
+
+---
+
+# Merge PDF Service Example
+
+```ts
+import { PDFDocument } from 'pdf-lib';
+import fs from 'fs';
+
+export const mergePDFs = async (files: string[]) => {
+  const mergedPdf = await PDFDocument.create();
+
+  for (const file of files) {
+    const pdfBytes = fs.readFileSync(file);
+
+    const pdf = await PDFDocument.load(pdfBytes);
+
+    const pages = await mergedPdf.copyPages(
+      pdf,
+      pdf.getPageIndices()
+    );
+
+    pages.forEach((page) => mergedPdf.addPage(page));
+  }
+
+  return mergedPdf.save();
+};
+```
+
+---
+
+# File Upload Middleware
+
+```ts
+import multer from 'multer';
+
+const storage = multer.diskStorage({
+  destination: 'uploads/',
+
+  filename: (_, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+
+export const upload = multer({ storage });
+```
+
+---
+
+# 10. Conversion Service
+
+# Responsibilities
+
+* DOCX → PDF
+* XLSX → PDF
+* PPTX → PDF
+* PDF → Image
+* Image → PDF
+
+---
+
+# LibreOffice Installation
+
+Ubuntu:
+
+```bash
+sudo apt install libreoffice
+```
+
+---
+
+# DOCX → PDF Conversion
+
+```ts
+import { exec } from 'child_process';
+
+export const convertToPDF = (
+  inputPath: string,
+  outputDir: string
+) => {
+  return new Promise((resolve, reject) => {
+    const command = `libreoffice --headless --convert-to pdf ${inputPath} --outdir ${outputDir}`;
+
+    exec(command, (error) => {
+      if (error) {
+        return reject(error);
+      }
+
+      resolve(true);
+    });
+  });
+};
+```
+
+---
+
+# PDF → Image
+
+Install:
+
+```bash
+sudo apt install poppler-utils
+```
+
+---
+
+# Example
+
+```ts
+const command = `pdftoppm input.pdf output -png`;
+```
+
+---
+
+# 11. Compression Service
+
+# Responsibilities
+
+* Compress PDF
+* Optimize images
+* Reduce size
+
+---
+
+# Install Ghostscript
+
+```bash
+sudo apt install ghostscript
+```
+
+---
+
+# Compression Example
+
+```ts
+const command = `gs \
+-sDEVICE=pdfwrite \
+-dCompatibilityLevel=1.4 \
+-dPDFSETTINGS=/ebook \
+-dNOPAUSE \
+-dQUIET \
+-dBATCH \
+-sOutputFile=compressed.pdf \
+input.pdf`;
+```
+
+---
+
+# 12. Storage Service
+
+# Responsibilities
+
+* Upload files
+* Delete files
+* Cleanup expired files
+* Generate URLs
+
+---
+
+# Storage Strategy
+
+Initial:
+
+```text
+storage/
+├── uploads/
+├── outputs/
+└── temp/
+```
+
+Later:
+
+* S3
+* Cloudflare R2
+
+---
+
+# File Cleanup Worker
+
+```ts
+import fs from 'fs';
+
+// Delete old temporary files every hour
+setInterval(() => {
+  logger.info('Running cleanup worker');
+}, 60 * 60 * 1000);
+```
+
+---
+
+# 13. Queue Service
+
+# Why Queues Matter
+
+Without queues:
+
+* server blocks
+* requests timeout
+* app crashes under load
+
+---
+
+# Install
+
+```bash
+npm install bullmq ioredis
+```
+
+---
+
+# Queue Setup
+
+```ts
+import { Queue } from 'bullmq';
+import Redis from 'ioredis';
+
+const connection = new Redis();
+
+export const pdfQueue = new Queue('pdf-jobs', {
+  connection
+});
+```
+
+---
+
+# Add Job
+
+```ts
+await pdfQueue.add('merge-pdf', {
+  files
+});
+```
+
+---
+
+# Worker Example
+
+```ts
+import { Worker } from 'bullmq';
+
+const worker = new Worker(
+  'pdf-jobs',
+
+  async (job) => {
+    logger.info(`Processing ${job.name}`);
+  },
+
+  { connection }
+);
+```
+
+---
+
+# 14. MySQL Database Setup
+
+# Install Prisma
+
+```bash
+npm install prisma @prisma/client
+```
+
+---
+
+# Prisma Init
+
+```bash
+npx prisma init
+```
+
+---
+
+# schema.prisma
+
+```prisma
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+model File {
+  id          String   @id @default(uuid())
+  originalName String
+  storedName  String
+  createdAt   DateTime @default(now())
+}
+
+model Job {
+  id        String   @id @default(uuid())
+  type      String
+  status    String
+  createdAt DateTime @default(now())
+}
+```
+
+---
+
+# Run Migration
+
+```bash
+npx prisma migrate dev
+```
+
+---
+
+# 15. Global Error Handler
+
+# middleware/errorHandler.ts
+
+```ts
+import { Request, Response, NextFunction } from 'express';
+
+export const errorHandler = (
+  error: any,
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  logger.error(error.message);
+
+  return res.status(500).json({
+    success: false,
+    message: 'Internal Server Error'
+  });
+};
+```
+
+---
+
+# 16. Validation System
+
+# Use Zod
+
+Install:
+
+```bash
+npm install zod
+```
+
+---
+
+# Example Validation
+
+```ts
+import { z } from 'zod';
+
+export const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6)
+});
+```
+
+---
+
+# 17. Security Checklist
+
+Always:
+
+* Validate files
+* Limit upload size
+* Use HTTPS
+* Sanitize filenames
+* Use Helmet
+* Use Rate Limiting
+* Delete temp files
+* Restrict executable uploads
+
+---
+
+# File Upload Limits
+
+```ts
+limits: {
+  fileSize: 20 * 1024 * 1024
+}
+```
+
+---
+
+# Allowed MIME Types
+
+```ts
+const allowed = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg'
+];
+```
+
+---
+
+# 18. Docker Setup
+
+# Dockerfile Example
+
+```dockerfile
+FROM node:20
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+```
+
+---
+
+# docker-compose.yml
+
+```yaml
+version: '3.9'
+
+services:
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - '3000:3000'
+
+  pdf-service:
+    build: ./pdf-service
+
+  conversion-service:
+    build: ./conversion-service
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+
+  redis:
+    image: redis
+```
+
+---
+
+# 19. Environment Variables
+
+# .env
+
+```env
+PORT=3000
+JWT_SECRET=super_secret
+MYSQL_URL=mysql://root:root@mysql:3306/pdfkit
+REDIS_URL=redis://redis:6379
+```
+
+---
+
+# 20. Recommended API Routes
+
+# PDF Service
+
+```text
+POST /merge
+POST /split
+POST /rotate
+POST /extract
+POST /delete-pages
+```
+
+---
+
+# Conversion Service
+
+```text
+POST /word-to-pdf
+POST /ppt-to-pdf
+POST /excel-to-pdf
+POST /pdf-to-image
+POST /image-to-pdf
+```
+
+---
+
+# Auth Service
+
+```text
+POST /register
+POST /login
+GET /profile
+```
+
+---
+
+# 21. Production Logging Strategy
+
+# Log Levels
+
+| Level | Purpose               |
+| ----- | --------------------- |
+| info  | General events        |
+| warn  | Suspicious situations |
+| error | Failures              |
+| debug | Development only      |
+
+---
+
+# Add Request IDs
+
+Every request should include:
+
+```text
+request-id
+```
+
+This helps trace distributed microservices.
+
+---
+
+# Example Log Output
+
+```json
+{
+  "timestamp": "2026-05-12T12:00:00Z",
+  "service": "pdf-service",
+  "level": "info",
+  "message": "PDF merged successfully"
+}
+```
+
+---
+
+# 22. Performance Best Practices
+
+Always:
+
+* Stream files when possible
+* Avoid loading huge PDFs into memory
+* Use queues for heavy tasks
+* Compress uploads
+* Cache repeated operations
+* Delete temp files
+
+---
+
+# 23. Recommended Development Order
+
+# Phase 1
+
+Build:
+
+1. Shared logger
+2. API gateway
+3. PDF service
+4. Storage service
+5. MySQL setup
+
+---
+
+# Phase 2
+
+Build:
+
+1. Conversion service
+2. Queue system
+3. Workers
+4. Compression service
+
+---
+
+# Phase 3
+
+Build:
+
+1. Authentication
+2. User service
+3. Analytics
+4. Monitoring
+
+---
+
+# 24. Monitoring
+
+Later add:
+
+* Prometheus
+* Grafana
+* Loki
+* ELK Stack
+
+For:
+
+* Logs
+* Metrics
+* Errors
+* Performance
+
+---
+
+# 25. Final Production Recommendations
+
+# DO
+
+* Use Docker everywhere
+* Keep services isolated
+* Use centralized logging
+* Write reusable utilities
+* Validate all inputs
+* Delete temp files automatically
+* Use queues for heavy jobs
+
+---
+
+# DO NOT
+
+* Put all logic in controllers
+* Store large files in database
+* Trust uploaded filenames
+* Block requests with heavy tasks
+* Log sensitive data
+* Over-engineer early
+
+---
+
+# 26. Best MVP Architecture
+
+For first launch only use:
+
+* API Gateway
+* PDF Service
+* Conversion Service
+* Storage Service
+* Queue Service
+* MySQL
+* Redis
+
+This is enough to support thousands of users if optimized properly.
+
+---
+
+# 27. Recommended Next Steps
+
+# Step 1
+
+Create monorepo structure.
+
+# Step 2
+
+Setup shared logger.
+
+# Step 3
+
+Build API Gateway.
+
+# Step 4
+
+Build PDF Service.
+
+# Step 5
+
+Add Docker.
+
+# Step 6
+
+Add Queue System.
+
+# Step 7
+
+Add Conversion Workers.
+
+# Step 8
+
+Deploy to production.
+
+---
+
+# 28. Final Goal
+
+Your backend should become:
+
+* scalable
+* fault tolerant
+* modular
+* easy to maintain
+* globally deployable
+* production ready
+* easy to extend
+
+This architecture is strong enough for a real SaaS PDF platform.

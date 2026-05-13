@@ -1,0 +1,15 @@
+# Root-level gitignore
+node_modules/
+dist/
+.env
+.env.*
+logs/
+uploads/
+outputs/
+temp/
+storage/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

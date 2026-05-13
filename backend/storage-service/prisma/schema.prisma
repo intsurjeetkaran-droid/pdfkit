@@ -1,0 +1,50 @@
+// PDFKit — Prisma Schema (Guest-First)
+// Database: MySQL / MariaDB
+// Auth is removed from all PDF operations — no userId required
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// File model — tracks uploaded and output files
+// No user dependency — works for anonymous guests
+// ─────────────────────────────────────────────
+model File {
+  id           String    @id @default(uuid())
+  originalName String
+  storedName   String
+  mimeType     String
+  size         Int
+  path         String
+  isTemporary  Boolean   @default(true)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([expiresAt])
+  @@index([isTemporary])
+}
+
+// ─────────────────────────────────────────────
+// Job model — tracks background processing jobs
+// No user dependency — guest jobs are fully supported
+// ─────────────────────────────────────────────
+model Job {
+  id           String    @id @default(uuid())
+  queue        String    // pdf-jobs | conversion-jobs | compression-jobs | cleanup-jobs | organization-jobs | security-jobs | metadata-jobs
+  status       String    @default("pending") // pending | processing | completed | failed
+  progress     Int       @default(0)
+  inputFileId  String?
+  outputFileId String?
+  error        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([status])
+  @@index([queue])
+}

@@ -1,0 +1,50 @@
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import storageRoutes from './routes/storageRoutes';
+import logger from './logger';
+
+const app = express();
+
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev'));
+
+// All storage routes are public — no auth required
+app.use('/api/storage', storageRoutes);
+
+// Health check
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    service: 'storage-service',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Global error handler
+app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error('Storage service error', { message: error.message, stack: error.stack });
+
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    res.status(400).json({
+      success: false,
+      message: `File too large. Maximum size is ${Math.round(100)}MB`
+    });
+    return;
+  }
+
+  if (error.message?.startsWith('File type not allowed')) {
+    res.status(400).json({ success: false, message: error.message });
+    return;
+  }
+
+  res.status(error.statusCode || 500).json({
+    success: false,
+    message: error.message || 'Internal Server Error'
+  });
+});
+
+export default app;

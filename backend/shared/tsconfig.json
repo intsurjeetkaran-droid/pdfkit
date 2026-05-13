@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./",
+    "outDir": "./dist"
+  },
+  "include": ["logger/**/*", "middleware/**/*", "utils/**/*", "constants/**/*", "types/**/*", "config/**/*"]
+}

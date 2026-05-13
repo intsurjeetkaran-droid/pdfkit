@@ -1,0 +1,39 @@
+# ── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+.npm/
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+build/
+
+# ── Environment — NEVER commit secrets ───────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+
+# ── Uploaded / processed files ───────────────────────────────────────────────
+uploads/
+outputs/
+temp/
+storage/
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editor ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Prisma generated client (regenerated on build) ───────────────────────────
+storage-service/node_modules/
+security-service/node_modules/
+metadata-service/node_modules/

@@ -1,0 +1,44 @@
+{
+  "name": "pdfkit-backend",
+  "version": "2.0.0",
+  "description": "PDFKit — Guest-First PDF Platform (microservices)",
+  "private": true,
+  "scripts": {
+    "dev:gateway":      "npm run dev --workspace=api-gateway",
+    "dev:pdf":          "npm run dev --workspace=pdf-service",
+    "dev:conversion":   "npm run dev --workspace=conversion-service",
+    "dev:storage":      "npm run dev --workspace=storage-service",
+    "dev:queue":        "npm run dev --workspace=queue-service",
+    "dev:organize":     "npm run dev --workspace=organization-service",
+    "dev:security":     "npm run dev --workspace=security-service",
+    "dev:metadata":     "npm run dev --workspace=metadata-service",
+    "build:all":        "npm run build --workspaces",
+    "docker:up":        "docker-compose up --build",
+    "docker:down":      "docker-compose down",
+    "docker:logs":      "docker-compose logs -f",
+    "test":             "node tests/run.js",
+    "test:infra":       "node tests/run.js --only 01",
+    "test:storage":     "node tests/run.js --only 02",
+    "test:pdf":         "node tests/run.js --only 03",
+    "test:conversion":  "node tests/run.js --only 04",
+    "test:organization":"node tests/run.js --only 05",
+    "test:queue":       "node tests/run.js --only 06",
+    "test:edge":        "node tests/run.js --only 07",
+    "test:security":    "node tests/run.js --only 08",
+    "test:metadata":    "node tests/run.js --only 09",
+    "test:fast":        "node tests/run.js --skip 01"
+  },
+  "workspaces": [
+    "api-gateway",
+    "pdf-service",
+    "conversion-service",
+    "storage-service",
+    "queue-service",
+    "organization-service",
+    "security-service",
+    "metadata-service"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

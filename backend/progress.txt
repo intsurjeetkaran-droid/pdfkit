@@ -1,0 +1,165 @@
+================================================================================
+  PDFKit Backend — Build Progress
+  Version: 2.0.0 — Guest-First PDF Platform
+  Last Updated: May 13, 2026
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CURRENT STATUS — ALL SYSTEMS GO ✅
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✅ 8 / 8 services running in Docker (all healthy)
+  ✅ 342 / 342 tests passing (100% pass rate)
+  ✅ All backend issues found during testing — FIXED
+  ✅ All documentation updated
+  ✅ Guest-first — zero auth required for any PDF operation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RUNNING SERVICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [✅] pdfkit-api-gateway          Port 3000  — Pure proxy, rate limiting, CORS, timing logs
+  [✅] pdfkit-pdf-service          Port 3001  — merge/split/rotate/extract/delete/reorder/watermark
+  [✅] pdfkit-conversion-service   Port 3002  — office→pdf, pdf→image, image→pdf, compress, pdf→word
+  [✅] pdfkit-storage-service      Port 3003  — guest upload, TTL cleanup, streaming download
+  [✅] pdfkit-queue-service        Port 3006  — BullMQ workers + Bull Board dashboard
+  [✅] pdfkit-organization-service Port 3007  — reorder/duplicate/remove pages
+  [✅] pdfkit-security-service     Port 3008  — protect/unlock/remove-metadata (qpdf + pdf-lib)
+  [✅] pdfkit-metadata-service     Port 3009  — info/page-count/preview (pdf-lib + pdftoppm)
+  [✅] pdfkit-mysql                Port 3307  — MySQL 8 (File + Job tables, no User table)
+  [✅] pdfkit-redis                Port 6380  — Redis 7 (BullMQ queues)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEST RESULTS — 342/342 PASSING ✅
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [✅] 01-infrastructure   51/51   Docker, MySQL schema, Redis, health endpoints, gateway
+  [✅] 02-storage          40/40   Upload, download, delete, stats, cleanup, edge cases
+  [✅] 03-pdf              41/41   Merge, split, rotate, extract, delete, reorder, watermark
+  [✅] 04-conversion       31/31   image-to-pdf, pdf-to-image, compress, office routes, pdf-to-word
+  [✅] 05-organization     19/19   Reorder, duplicate, remove pages
+  [✅] 06-queue            75/75   Stats, add job, get status, retry, Bull Board
+  [✅] 07-edge-cases       36/36   Security, guest-first, concurrent, response shape, CORS
+  [✅] 08-security         21/21   Protect, unlock (round-trip), remove-metadata, edge cases
+  [✅] 09-metadata         28/28   Info (pdfVersion, fileSizeMB), page-count, preview PNG
+
+  Run tests:
+    node tests/run.js              — all 342 tests
+    node tests/run.js --only 08    — security service only
+    node tests/run.js --only 09    — metadata service only
+    node tests/run.js --skip 01    — skip infra (faster)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ALL BACKEND FIXES APPLIED (17 total)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [✅] FIX 1:  Storage — Wrong field name → 500 → now 400
+  [✅] FIX 2:  Storage — Zero-byte file → 500 → now 400
+  [✅] FIX 3:  Storage — downloadUrl returns internal Docker hostname → fixed with STORAGE_BASE_URL
+  [✅] FIX 4:  Storage — Very long filenames crash multer → truncated to 200 chars
+  [✅] FIX 5:  Conversion — Wrong MIME type → 500 → now 400 (per-route MIME validation)
+  [✅] FIX 6:  Conversion — Zero-byte file → 500 → now 400
+  [✅] FIX 7:  PDF — Corrupt/empty PDF → 500 → now 400 (loadPDF() helper)
+  [✅] FIX 8:  Queue — Retry non-failed job → 500 → now 400 with clear message
+  [✅] FIX 9:  Queue — Health response shape inconsistent → standardized to {status:'ok'}
+  [✅] FIX 10: Gateway — TypeScript error on proxy 'on' → changed to onProxyReq/Res/Error
+  [✅] FIX 11: Docker — shared/utils/timer import fails → local timer.ts per service
+  [✅] FIX 12: CORS — Access-Control-Allow-Origin missing → fixed ALLOWED_ORIGINS=* handling
+  [✅] FIX 13: Rate limiting — tests hit 429 → TEST_MODE=true raises limits to 10,000
+  [✅] FIX 14: Security — protect/unlock corrupt PDF → 500 → classifyQpdfError() → 400
+  [✅] FIX 15: Security — remove-metadata corrupt PDF → 500 → wrapped catalog + save() → 400
+  [✅] FIX 16: Metadata — pdfVersion used producer field (wrong) → reads %PDF-x.y header
+  [✅] FIX 17: Metadata — fileSizeMB rounds to 0 for small files → 3 decimal places
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ALL PUBLIC ROUTES (no auth required)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  PDF Service:
+    POST /api/pdf/merge
+    POST /api/pdf/split
+    POST /api/pdf/rotate
+    POST /api/pdf/extract
+    POST /api/pdf/delete-pages
+    POST /api/pdf/reorder
+    POST /api/pdf/watermark
+
+  Conversion Service:
+    POST /api/convert/word-to-pdf
+    POST /api/convert/excel-to-pdf
+    POST /api/convert/ppt-to-pdf
+    POST /api/convert/pdf-to-image
+    POST /api/convert/image-to-pdf
+    POST /api/convert/compress
+    POST /api/convert/pdf-to-word
+
+  Storage Service:
+    POST   /api/storage/upload-temp
+    GET    /api/storage/temp/:id
+    GET    /api/storage/temp/:id/download
+    DELETE /api/storage/temp/:id
+    GET    /api/storage/stats
+    POST   /api/storage/cleanup
+
+  Organization Service:
+    POST /api/organize/reorder
+    POST /api/organize/duplicate
+    POST /api/organize/remove
+
+  Security Service:
+    POST /api/security/protect
+    POST /api/security/unlock
+    POST /api/security/remove-metadata
+
+  Metadata Service:
+    POST /api/meta/info
+    POST /api/meta/page-count
+    POST /api/meta/preview
+
+  Queue Service:
+    POST /api/queue/jobs
+    GET  /api/queue/jobs/:queue/:id
+    GET  /api/queue/stats
+    POST /api/queue/jobs/:queue/:id/retry
+    GET  /admin/queues
+
+  Health (all services):
+    GET /health
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  REMOVED IN v2.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [❌] auth-service          — No PDF operation requires auth
+  [❌] user-service          — Depended on auth; no guest use
+  [❌] workers/cleanup-worker      — Duplicate, merged into queue-service
+  [❌] workers/compression-worker  — Duplicate, merged into queue-service
+  [❌] workers/libreoffice-worker  — Duplicate, merged into queue-service
+  [❌] prisma/ (root)              — Old schema with User relations
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PROGRESS SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Phase 1 (Core Foundation):      ██████████  100% ✅
+  Phase 2 (Processing):           ██████████  100% ✅
+  Phase 3 (Guest-First Refactor): ██████████  100% ✅
+  Phase 4 (Testing & QA):         ██████████  100% ✅  342/342 passing
+  Phase 5 (New Services):         ██████████  100% ✅
+    ✅ organization-service (complete)
+    ✅ security-service (complete)
+    ✅ metadata-service (complete)
+  Phase 6 (Production Hardening): ████████░░   80%
+    ✅ Docker + docker-compose (8 services)
+    ✅ Health checks on all services
+    ✅ Rate limiting (TEST_MODE for CI)
+    ✅ CORS configured
+    ✅ Structured logging with timing
+    🔲 Monitoring (Prometheus + Grafana)
+    🔲 CI/CD pipeline
+    🔲 Cloud storage (S3/R2)
+
+  Active services:   8 / 8 ✅
+  Tests passing:     342 / 342 ✅
+  Docker:            All containers healthy ✅
+================================================================================
