@@ -1,0 +1,63 @@
+'use client';
+
+import { useState } from 'react';
+import { Presentation } from 'lucide-react';
+import ToolLayout from '@/components/ToolLayout';
+import FileDropzone from '@/components/FileDropzone';
+import Button from '@/components/ui/Button';
+import Alert from '@/components/ui/Alert';
+import DownloadSuccess from '@/components/DownloadSuccess';
+import { pptToPDF, downloadBlob } from '@/lib/api';
+
+export default function PPTToPDFPage() {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  function reset() { setFile(null); setDone(false); setError(null); }
+
+  async function handleConvert() {
+    if (!file) { setError('Select a PowerPoint file.'); return; }
+    setLoading(true); setError(null);
+    try {
+      const blob = await pptToPDF(file);
+      downloadBlob(blob, file.name.replace(/\.(pptx?|odp)$/i, '.pdf') || 'converted.pdf');
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Conversion failed.');
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <ToolLayout
+      title="PowerPoint to PDF"
+      description="Convert PPTX or PPT presentations to PDF using LibreOffice."
+      icon={<Presentation className="h-6 w-6" />}
+    >
+      {done ? (
+        <DownloadSuccess filename={file?.name.replace(/\.(pptx?|odp)$/i, '.pdf') || 'converted.pdf'} onReset={reset} />
+      ) : (
+        <>
+          <FileDropzone
+            accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint"
+            file={file}
+            onFiles={(f) => { setFile(f[0]); setError(null); setDone(false); }}
+            label="Drop a PowerPoint file here"
+            sublabel="PPTX or PPT · tap to browse"
+          />
+
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
+            <strong>Note:</strong> LibreOffice conversion takes 3–15 seconds.
+          </div>
+
+          {error && <Alert type="error" message={error} onDismiss={() => setError(null)} />}
+
+          <Button fullWidth size="lg" loading={loading} disabled={!file} onClick={handleConvert}>
+            {loading ? 'Converting…' : 'Convert to PDF'}
+          </Button>
+        </>
+      )}
+    </ToolLayout>
+  );
+}
