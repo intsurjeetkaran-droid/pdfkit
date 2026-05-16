@@ -186,9 +186,10 @@ export const pdfToWord = async (inputPath: string): Promise<string> => {
   logger.info('▶ pdf-to-word started', { inputPath, inputSizeKB });
 
   // Step 1: LibreOffice converts PDF → DOCX
-  // This is the slowest step — LibreOffice must start, parse the PDF,
-  // reconstruct the layout, and write the DOCX.
-  const command = `libreoffice --headless --convert-to docx "${inputPath}" --outdir "${OUTPUT_DIR}"`;
+  // --infilter='writer_pdf_import' forces LibreOffice to open the PDF as a
+  // Writer document so it can export to DOCX. Without this flag, Alpine's
+  // minimal LibreOffice build falls back to Draw and has no DOCX export filter.
+  const command = `libreoffice --headless --infilter='writer_pdf_import' --convert-to docx "${inputPath}" --outdir "${OUTPUT_DIR}"`;
   await execCommand(command, 300_000);
   t.step('libreoffice-exec');
 
