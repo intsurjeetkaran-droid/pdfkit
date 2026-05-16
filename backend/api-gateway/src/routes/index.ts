@@ -129,4 +129,13 @@ router.use(
   createProxyMiddleware(proxyOptions(SERVICE_URLS.metadata, 'metadata-service'))
 );
 
+// ── HTML Service  (/api/html/*) ───────────────────────────────────────────────
+// HTML file to PDF, URL to PDF, HTML string to PDF
+// heavyLimiter because Puppeteer/Chromium is CPU-intensive
+router.use(
+  '/api/html',
+  heavyLimiter,
+  createProxyMiddleware(proxyOptions(SERVICE_URLS.html, 'html-service'))
+);
+
 export default router;

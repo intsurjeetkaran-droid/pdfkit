@@ -210,3 +210,174 @@ export const pdfToWord = async (inputPath: string): Promise<string> => {
 
   return uniqueOutput;
 };
+
+// ─── PDF → TXT ───────────────────────────────────────────────────────────────
+// Tool: pdftotext (poppler-utils — already installed in Docker)
+export const pdfToText = async (inputPath: string): Promise<{ outputPath: string; text: string; pageCount: number }> => {
+  const t = new Timer('pdf-to-text');
+  const inputSizeKB = Math.round(fs.statSync(inputPath).size / 1024);
+  logger.info('▶ pdf-to-text started', { inputPath, inputSizeKB });
+
+  const outputPath = path.join(OUTPUT_DIR, `pdf-text-${uuidv4()}.txt`);
+
+  // -layout preserves original layout as much as possible
+  // -enc UTF-8 ensures Unicode output
+  const command = `pdftotext -layout -enc UTF-8 "${inputPath}" "${outputPath}"`;
+  await execCommand(command);
+  t.step('pdftotext-exec');
+
+  if (!fs.existsSync(outputPath)) {
+    throw new Error('pdf-to-text failed — pdftotext did not produce output');
+  }
+
+  const text = fs.readFileSync(outputPath, 'utf-8');
+  t.step('read-output');
+
+  // Estimate page count from form-feed characters (pdftotext uses \f between pages)
+  const pageCount = Math.max(1, (text.match(/\f/g) || []).length + 1);
+
+  const outputSizeKB = Math.round(fs.statSync(outputPath).size / 1024);
+  logger.info('✔ pdf-to-text done', t.summary({ inputSizeKB, outputSizeKB, pageCount }));
+
+  return { outputPath, text, pageCount };
+};
+
+// ─── SVG → PDF ───────────────────────────────────────────────────────────────
+// Tools: sharp (rasterize SVG) + pdf-lib (embed as PNG in PDF)
+export const svgToPdf = async (inputPath: string, options: { pageSize?: 'A4' | 'Letter' | 'auto'; orientation?: 'portrait' | 'landscape' } = {}): Promise<string> => {
+  const t = new Timer('svg-to-pdf');
+  const inputSizeKB = Math.round(fs.statSync(inputPath).size / 1024);
+  logger.info('▶ svg-to-pdf started', { inputPath, inputSizeKB, options });
+
+  // Rasterize SVG to PNG at high DPI for quality
+  const pngBuffer = await sharp(inputPath).png({ quality: 100 }).toBuffer();
+  const metadata = await sharp(pngBuffer).metadata();
+  t.step('sharp-rasterize');
+
+  const imgWidth  = metadata.width  || 595;
+  const imgHeight = metadata.height || 842;
+
+  // Determine page dimensions
+  let pageWidth: number;
+  let pageHeight: number;
+
+  if (options.pageSize === 'A4') {
+    pageWidth  = options.orientation === 'landscape' ? 841.89 : 595.28;
+    pageHeight = options.orientation === 'landscape' ? 595.28 : 841.89;
+  } else if (options.pageSize === 'Letter') {
+    pageWidth  = options.orientation === 'landscape' ? 792 : 612;
+    pageHeight = options.orientation === 'landscape' ? 612 : 792;
+  } else {
+    // auto: use image dimensions
+    pageWidth  = imgWidth;
+    pageHeight = imgHeight;
+  }
+
+  const pdfDoc = await PDFDocument.create();
+  const page   = pdfDoc.addPage([pageWidth, pageHeight]);
+  const pngImg = await pdfDoc.embedPng(pngBuffer);
+
+  // Scale image to fit page while preserving aspect ratio
+  const scale = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
+  const drawW = imgWidth  * scale;
+  const drawH = imgHeight * scale;
+  const x     = (pageWidth  - drawW) / 2;
+  const y     = (pageHeight - drawH) / 2;
+
+  page.drawImage(pngImg, { x, y, width: drawW, height: drawH });
+  t.step('pdf-lib-embed');
+
+  const pdfBytes  = await pdfDoc.save();
+  const outputPath = path.join(OUTPUT_DIR, `svg-to-pdf-${uuidv4()}.pdf`);
+  fs.writeFileSync(outputPath, pdfBytes);
+  t.step('write-file');
+
+  const outputSizeKB = Math.round(pdfBytes.length / 1024);
+  logger.info('✔ svg-to-pdf done', t.summary({ inputSizeKB, outputSizeKB, outputPath }));
+  return outputPath;
+};
+
+// ─── MULTI-IMAGES → PDF ──────────────────────────────────────────────────────
+// Tools: sharp + pdf-lib
+// Supports: JPG, JPEG, PNG, WebP, TIFF, BMP
+// Options: pageSize, orientation, margin, fit mode
+export interface MultiImageOptions {
+  pageSize?: 'A4' | 'Letter' | 'auto';
+  orientation?: 'portrait' | 'landscape';
+  margin?: number;
+  fit?: 'contain' | 'cover' | 'stretch';
+}
+
+export const imagesToPdf = async (inputPaths: string[], options: MultiImageOptions = {}): Promise<string> => {
+  const t = new Timer('images-to-pdf');
+  logger.info('▶ images-to-pdf started', { count: inputPaths.length, options });
+
+  const { pageSize = 'A4', orientation = 'portrait', margin = 0, fit = 'contain' } = options;
+
+  const pdfDoc = await PDFDocument.create();
+
+  for (const imgPath of inputPaths) {
+    // Normalize all images to PNG via sharp for consistent pdf-lib embedding
+    const pngBuffer = await sharp(imgPath).png().toBuffer();
+    const meta      = await sharp(pngBuffer).metadata();
+    const imgW      = meta.width  || 595;
+    const imgH      = meta.height || 842;
+
+    // Page dimensions
+    let pageW: number;
+    let pageH: number;
+    if (pageSize === 'A4') {
+      pageW = orientation === 'landscape' ? 841.89 : 595.28;
+      pageH = orientation === 'landscape' ? 595.28 : 841.89;
+    } else if (pageSize === 'Letter') {
+      pageW = orientation === 'landscape' ? 792 : 612;
+      pageH = orientation === 'landscape' ? 612 : 792;
+    } else {
+      pageW = imgW;
+      pageH = imgH;
+    }
+
+    const page   = pdfDoc.addPage([pageW, pageH]);
+    const pngImg = await pdfDoc.embedPng(pngBuffer);
+
+    const availW = pageW - margin * 2;
+    const availH = pageH - margin * 2;
+
+    let drawW: number;
+    let drawH: number;
+    let x: number;
+    let y: number;
+
+    if (fit === 'stretch') {
+      drawW = availW;
+      drawH = availH;
+      x = margin;
+      y = margin;
+    } else if (fit === 'cover') {
+      const scale = Math.max(availW / imgW, availH / imgH);
+      drawW = imgW * scale;
+      drawH = imgH * scale;
+      x = margin + (availW - drawW) / 2;
+      y = margin + (availH - drawH) / 2;
+    } else {
+      // contain (default)
+      const scale = Math.min(availW / imgW, availH / imgH);
+      drawW = imgW * scale;
+      drawH = imgH * scale;
+      x = margin + (availW - drawW) / 2;
+      y = margin + (availH - drawH) / 2;
+    }
+
+    page.drawImage(pngImg, { x, y, width: drawW, height: drawH });
+    t.step(`embed-image-${inputPaths.indexOf(imgPath) + 1}`);
+  }
+
+  const pdfBytes  = await pdfDoc.save();
+  const outputPath = path.join(OUTPUT_DIR, `images-to-pdf-${uuidv4()}.pdf`);
+  fs.writeFileSync(outputPath, pdfBytes);
+  t.step('write-file');
+
+  const outputSizeKB = Math.round(pdfBytes.length / 1024);
+  logger.info('✔ images-to-pdf done', t.summary({ imageCount: inputPaths.length, outputSizeKB, outputPath }));
+  return outputPath;
+};

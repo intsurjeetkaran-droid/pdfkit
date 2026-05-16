@@ -25,6 +25,7 @@ const storage = multer.diskStorage({
 const ALLOWED_MIMES = [
   'application/pdf',
   'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/tiff', 'image/bmp',
+  'image/svg+xml',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -55,6 +56,44 @@ export const uploadSingle = (req: Request, res: Response, next: NextFunction): v
       : err.code === 'LIMIT_UNEXPECTED_FILE'
         ? 'Unexpected field. Use "file" as the field name'
         : err.message || 'File upload error';
+    res.status(400).json({ success: false, message });
+  });
+};
+
+// ── Multi-file upload for images-to-pdf ──────────────────────────────────────
+// Accepts up to 50 image files under the field name "files"
+const IMAGE_MIMES_ALLOWED = [
+  'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/tiff', 'image/bmp'
+];
+
+const imageFileFilter = (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+  if (IMAGE_MIMES_ALLOWED.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`File type not allowed: ${file.mimetype}`));
+  }
+};
+
+const _uploadMultiple = multer({
+  storage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: MAX_FILE_SIZE, files: 50 }
+}).array('files', 50);
+
+/**
+ * Multi-file upload middleware for images-to-pdf.
+ * Field name: "files" (array), max 50 files, images only.
+ */
+export const uploadMultipleImages = (req: Request, res: Response, next: NextFunction): void => {
+  _uploadMultiple(req, res, (err: any) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'File too large. Maximum size is 100MB'
+      : err.code === 'LIMIT_FILE_COUNT'
+        ? 'Too many files. Maximum is 50 images per request'
+        : err.code === 'LIMIT_UNEXPECTED_FILE'
+          ? 'Unexpected field. Use "files" as the field name'
+          : err.message || 'File upload error';
     res.status(400).json({ success: false, message });
   });
 };

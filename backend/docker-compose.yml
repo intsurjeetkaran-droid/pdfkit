@@ -64,6 +64,7 @@ services:
       ORGANIZATION_SERVICE_URL: http://organization-service:3007
       SECURITY_SERVICE_URL: http://security-service:3008
       METADATA_SERVICE_URL: http://metadata-service:3009
+      HTML_SERVICE_URL: http://html-service:3010
       LOG_LEVEL: info
       TEST_MODE: "true"
       ALLOWED_ORIGINS: "*"
@@ -270,6 +271,34 @@ services:
       timeout: 5s
       retries: 3
 
+  # ── HTML Service — Port 3010 ───────────────────────────────────────────────────
+  # html-file-to-pdf, url-to-pdf, html-string-to-pdf
+  # Requires: Chromium (puppeteer-core — installed in Dockerfile)
+  html-service:
+    build:
+      context: ./html-service
+      dockerfile: Dockerfile
+    container_name: pdfkit-html-service
+    restart: unless-stopped
+    ports:
+      - '3010:3010'
+    environment:
+      NODE_ENV: production
+      HTML_SERVICE_PORT: 3010
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      LOG_LEVEL: info
+    volumes:
+      - html_uploads:/app/src/uploads
+      - html_outputs:/app/outputs
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Named volumes — persisted across container restarts
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,6 +317,8 @@ volumes:
   security_outputs:
   metadata_uploads:
   metadata_outputs:
+  html_uploads:
+  html_outputs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal Docker network — services communicate by container name

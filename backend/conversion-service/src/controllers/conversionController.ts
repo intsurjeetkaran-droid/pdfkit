@@ -6,7 +6,10 @@ import {
   pdfToImage,
   imageToPdf,
   compressPdf,
-  pdfToWord
+  pdfToWord,
+  pdfToText,
+  svgToPdf,
+  imagesToPdf
 } from '../services/conversionService';
 import logger from '../logger';
 import { Timer } from '../utils/timer';
@@ -14,6 +17,7 @@ import { Timer } from '../utils/timer';
 // ── MIME type sets for per-route validation ───────────────────────────────────
 const PDF_MIMES    = new Set(['application/pdf']);
 const IMAGE_MIMES  = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/tiff', 'image/bmp']);
+const SVG_MIMES    = new Set(['image/svg+xml']);
 const OFFICE_MIMES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/msword',
@@ -184,5 +188,98 @@ export const pdfToWordHandler = async (req: Request, res: Response, next: NextFu
 
     logger.info('Response: pdf-to-word', t.summary({ outputPath }));
     sendFileAndCleanup(res, outputPath, 'converted.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  } catch (error) { next(error); }
+};
+
+// ── POST /api/convert/pdf-to-text ─────────────────────────────────────────────
+export const pdfToTextHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const t = new Timer('http-pdf-to-text');
+  try {
+    const file = req.file;
+    if (!file) { res.status(400).json({ success: false, message: 'PDF file is required' }); return; }
+    if (!validateMime(file, PDF_MIMES, 'PDF', res)) return;
+    if (!validateNotEmpty(file, res)) return;
+
+    logger.info('Request: pdf-to-text', { originalName: file.originalname, sizeKB: Math.round(file.size / 1024) });
+
+    const { outputPath, text, pageCount } = await pdfToText(file.path);
+    t.step('conversion');
+    fs.unlink(file.path, () => {});
+
+    logger.info('Response: pdf-to-text', t.summary({ outputPath, pageCount, textLength: text.length }));
+    sendFileAndCleanup(res, outputPath, `${path.basename(file.originalname, '.pdf')}.txt`, 'text/plain; charset=utf-8');
+  } catch (error) { next(error); }
+};
+
+// ── POST /api/convert/svg-to-pdf ──────────────────────────────────────────────
+export const svgToPdfHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const t = new Timer('http-svg-to-pdf');
+  try {
+    const file = req.file;
+    if (!file) { res.status(400).json({ success: false, message: 'SVG file is required' }); return; }
+    if (!validateMime(file, SVG_MIMES, 'SVG', res)) return;
+    if (!validateNotEmpty(file, res)) return;
+
+    const pageSize    = (['A4', 'Letter', 'auto'] as const).includes(req.body.pageSize) ? req.body.pageSize : 'A4';
+    const orientation = req.body.orientation === 'landscape' ? 'landscape' : 'portrait';
+
+    logger.info('Request: svg-to-pdf', { originalName: file.originalname, sizeKB: Math.round(file.size / 1024), pageSize, orientation });
+
+    const outputPath = await svgToPdf(file.path, { pageSize, orientation });
+    t.step('conversion');
+    fs.unlink(file.path, () => {});
+
+    logger.info('Response: svg-to-pdf', t.summary({ outputPath }));
+    sendFileAndCleanup(res, outputPath, `${path.basename(file.originalname, '.svg')}.pdf`, 'application/pdf');
+  } catch (error) { next(error); }
+};
+
+// ── POST /api/convert/images-to-pdf ──────────────────────────────────────────
+export const imagesToPdfHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const t = new Timer('http-images-to-pdf');
+  try {
+    const files = req.files as Express.Multer.File[] | undefined;
+    if (!files || files.length === 0) { res.status(400).json({ success: false, message: 'At least one image file is required' }); return; }
+    if (files.length > 50) { res.status(400).json({ success: false, message: 'Maximum 50 images per request' }); return; }
+
+    // Validate all files are images
+    for (const file of files) {
+      if (!IMAGE_MIMES.has(file.mimetype)) {
+        files.forEach((f) => fs.unlink(f.path, () => {}));
+        res.status(400).json({ success: false, message: `Expected image file, got: ${file.mimetype}` });
+        return;
+      }
+      if (file.size === 0) {
+        files.forEach((f) => fs.unlink(f.path, () => {}));
+        res.status(400).json({ success: false, message: 'One or more files are empty (0 bytes)' });
+        return;
+      }
+    }
+
+    // Parse options
+    const pageSize    = (['A4', 'Letter', 'auto'] as const).includes(req.body.pageSize) ? req.body.pageSize : 'A4';
+    const orientation = req.body.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const margin      = Math.min(Math.max(parseInt(req.body.margin) || 0, 0), 100);
+    const fit         = (['contain', 'cover', 'stretch'] as const).includes(req.body.fit) ? req.body.fit : 'contain';
+
+    // Respect custom order if provided
+    let orderedPaths = files.map((f) => f.path);
+    if (req.body.order) {
+      try {
+        const order: number[] = JSON.parse(req.body.order);
+        if (Array.isArray(order) && order.length === files.length) {
+          orderedPaths = order.map((i) => files[i]?.path).filter(Boolean) as string[];
+        }
+      } catch { /* ignore invalid order, use original */ }
+    }
+
+    logger.info('Request: images-to-pdf', { count: files.length, pageSize, orientation, margin, fit });
+
+    const outputPath = await imagesToPdf(orderedPaths, { pageSize, orientation, margin, fit });
+    t.step('conversion');
+    files.forEach((f) => fs.unlink(f.path, () => {}));
+
+    logger.info('Response: images-to-pdf', t.summary({ outputPath }));
+    sendFileAndCleanup(res, outputPath, 'combined.pdf', 'application/pdf');
   } catch (error) { next(error); }
 };

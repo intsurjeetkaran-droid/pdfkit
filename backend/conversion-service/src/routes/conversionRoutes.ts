@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { uploadSingle } from '../utils/upload';
+import { uploadSingle, uploadMultipleImages } from '../utils/upload';
 import {
   officeToPdfHandler,
   pdfToImageHandler,
   imageToPdfHandler,
   compressPdfHandler,
-  pdfToWordHandler
+  pdfToWordHandler,
+  pdfToTextHandler,
+  svgToPdfHandler,
+  imagesToPdfHandler
 } from '../controllers/conversionController';
 
 const router = Router();
@@ -54,5 +57,25 @@ router.post('/compress', uploadSingle, compressPdfHandler);
  * Uses LibreOffice to convert PDF → DOCX
  */
 router.post('/pdf-to-word', uploadSingle, pdfToWordHandler);
+
+/**
+ * POST /api/convert/pdf-to-text
+ * Body: multipart/form-data — field "file" (PDF)
+ * Uses pdftotext (poppler-utils) to extract text content
+ */
+router.post('/pdf-to-text', uploadSingle, pdfToTextHandler);
+
+/**
+ * POST /api/convert/svg-to-pdf
+ * Body: multipart/form-data — field "file" (SVG) + optional "pageSize" (A4|Letter|auto) + optional "orientation" (portrait|landscape)
+ */
+router.post('/svg-to-pdf', uploadSingle, svgToPdfHandler);
+
+/**
+ * POST /api/convert/images-to-pdf
+ * Body: multipart/form-data — field "files" (up to 50 images: PNG/JPEG/WebP/TIFF/BMP)
+ *       + optional "pageSize", "orientation", "margin", "fit", "order"
+ */
+router.post('/images-to-pdf', uploadMultipleImages, imagesToPdfHandler);
 
 export default router;

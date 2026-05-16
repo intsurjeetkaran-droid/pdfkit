@@ -13,5 +13,6 @@ export const SERVICE_URLS = {
   queue: process.env.QUEUE_SERVICE_URL || 'http://localhost:3006',
   organization: process.env.ORGANIZATION_SERVICE_URL || 'http://localhost:3007',
   security: process.env.SECURITY_SERVICE_URL || 'http://localhost:3008',
-  metadata: process.env.METADATA_SERVICE_URL || 'http://localhost:3009'
+  metadata: process.env.METADATA_SERVICE_URL || 'http://localhost:3009',
+  html: process.env.HTML_SERVICE_URL || 'http://localhost:3010'
 } as const;

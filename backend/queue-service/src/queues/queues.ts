@@ -54,6 +54,12 @@ export const metadataQueue = new Queue('metadata-jobs', {
   defaultJobOptions
 });
 
+// HTML queue — html-to-pdf, url-to-pdf, html-string-to-pdf
+export const htmlQueue = new Queue('html-jobs', {
+  connection: redisConnection,
+  defaultJobOptions
+});
+
 // Export all queues for Bull Board registration
 export const allQueues = [
   pdfQueue,
@@ -62,5 +68,6 @@ export const allQueues = [
   cleanupQueue,
   organizationQueue,
   securityQueue,
-  metadataQueue
+  metadataQueue,
+  htmlQueue
 ];
