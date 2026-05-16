@@ -163,6 +163,83 @@ export async function pdfToWord(file: File): Promise<Blob> {
   return (await postForm('/api/convert/pdf-to-word', fd)).blob();
 }
 
+// PDF → TXT (pdftotext via poppler-utils)
+export async function pdfToText(file: File): Promise<Blob> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return (await postForm('/api/convert/pdf-to-text', fd)).blob();
+}
+
+// SVG → PDF (sharp + pdf-lib)
+export async function svgToPDF(
+  file: File,
+  options: { pageSize?: 'A4' | 'Letter' | 'auto'; orientation?: 'portrait' | 'landscape' } = {}
+): Promise<Blob> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('pageSize', options.pageSize ?? 'A4');
+  fd.append('orientation', options.orientation ?? 'portrait');
+  return (await postForm('/api/convert/svg-to-pdf', fd)).blob();
+}
+
+// Multiple images → single PDF (sharp + pdf-lib, up to 50 images)
+export async function imagesToPDF(
+  files: File[],
+  options: {
+    pageSize?: 'A4' | 'Letter' | 'auto';
+    orientation?: 'portrait' | 'landscape';
+    margin?: number;
+    fit?: 'contain' | 'cover' | 'stretch';
+  } = {}
+): Promise<Blob> {
+  const fd = new FormData();
+  files.forEach((f) => fd.append('files', f));
+  fd.append('pageSize', options.pageSize ?? 'A4');
+  fd.append('orientation', options.orientation ?? 'portrait');
+  fd.append('margin', String(options.margin ?? 0));
+  fd.append('fit', options.fit ?? 'contain');
+  return (await postForm('/api/convert/images-to-pdf', fd)).blob();
+}
+
+// HTML string → PDF (Puppeteer / html-service)
+export interface HtmlPdfOptions {
+  format?: 'A4' | 'A3' | 'Letter' | 'Legal';
+  landscape?: boolean;
+  printBackground?: boolean;
+  scale?: number;
+  marginTop?: string;
+  marginBottom?: string;
+  marginLeft?: string;
+  marginRight?: string;
+}
+
+async function postJson(path: string, body: Record<string, unknown>): Promise<Response> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res;
+}
+
+export async function htmlStringToPDF(html: string, options: HtmlPdfOptions = {}): Promise<Blob> {
+  return (await postJson('/api/html/string-to-pdf', { html, ...options })).blob();
+}
+
+export async function htmlFileToPDF(file: File, options: HtmlPdfOptions = {}): Promise<Blob> {
+  const fd = new FormData();
+  fd.append('file', file);
+  Object.entries(options).forEach(([k, v]) => {
+    if (v !== undefined) fd.append(k, String(v));
+  });
+  return (await postForm('/api/html/file-to-pdf', fd)).blob();
+}
+
+export async function urlToPDF(url: string, options: HtmlPdfOptions = {}): Promise<Blob> {
+  return (await postJson('/api/html/url-to-pdf', { url, ...options })).blob();
+}
+
 // ─── Organization Service ─────────────────────────────────────────────────────
 
 export async function organizeReorder(file: File, order: number[]): Promise<Blob> {

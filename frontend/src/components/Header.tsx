@@ -26,8 +26,12 @@ const navGroups = [
       { href: '/tools/excel-to-pdf', label: 'Excel to PDF' },
       { href: '/tools/ppt-to-pdf', label: 'PPT to PDF' },
       { href: '/tools/pdf-to-word', label: 'PDF to Word' },
+      { href: '/tools/pdf-to-text', label: 'PDF to Text' },
       { href: '/tools/image-to-pdf', label: 'Image to PDF' },
+      { href: '/tools/images-to-pdf', label: 'Images to PDF' },
       { href: '/tools/pdf-to-image', label: 'PDF to Image' },
+      { href: '/tools/svg-to-pdf', label: 'SVG to PDF' },
+      { href: '/tools/html-to-pdf', label: 'HTML to PDF 🆕' },
     ],
   },
   {

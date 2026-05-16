@@ -1,47 +1,58 @@
 import ToolCard from '@/components/ToolCard';
-import { Merge, Scissors, RotateCw, Minimize2, Droplets, Trash2, FileOutput, FileInput, Image, FileImage, Lock, Unlock, ShieldOff, Info, Copy, AlignJustify, FileSpreadsheet, Presentation, FileType } from 'lucide-react';
+import {
+  Merge, Scissors, RotateCw, Minimize2, Droplets, Trash2, FileOutput,
+  FileInput, Image, FileImage, Lock, Unlock, ShieldOff, Info, Copy,
+  AlignJustify, FileSpreadsheet, Presentation, FileType, FileText,
+  Shapes, Images, Globe
+} from 'lucide-react';
 
 const toolGroups = [
   {
     heading: 'PDF Operations',
     color: 'text-blue-700',
     tools: [
-      { href: '/tools/merge', title: 'Merge PDF', description: 'Combine 2–20 PDFs into one document', icon: <Merge className="h-5 w-5" />, color: 'bg-blue-600' },
-      { href: '/tools/split', title: 'Split PDF', description: 'Extract specific pages into a new PDF', icon: <Scissors className="h-5 w-5" />, color: 'bg-blue-500' },
-      { href: '/tools/rotate', title: 'Rotate PDF', description: 'Rotate pages 90°, 180° or 270°', icon: <RotateCw className="h-5 w-5" />, color: 'bg-indigo-500' },
-      { href: '/tools/compress', title: 'Compress PDF', description: 'Reduce file size with Ghostscript', icon: <Minimize2 className="h-5 w-5" />, color: 'bg-violet-500' },
-      { href: '/tools/watermark', title: 'Watermark', description: 'Add text or image watermarks', icon: <Droplets className="h-5 w-5" />, color: 'bg-cyan-500' },
-      { href: '/tools/extract', title: 'Extract Pages', description: 'Extract a page range from a PDF', icon: <FileOutput className="h-5 w-5" />, color: 'bg-sky-500' },
-      { href: '/tools/delete-pages', title: 'Delete Pages', description: 'Remove specific pages from a PDF', icon: <Trash2 className="h-5 w-5" />, color: 'bg-rose-500' },
-      { href: '/tools/reorder', title: 'Reorder Pages', description: 'Rearrange pages in any order', icon: <AlignJustify className="h-5 w-5" />, color: 'bg-amber-500' },
+      { href: '/tools/merge',        title: 'Merge PDF',       description: 'Combine 2–20 PDFs into one document',    icon: <Merge className="h-5 w-5" />,         color: 'bg-blue-600' },
+      { href: '/tools/split',        title: 'Split PDF',       description: 'Extract specific pages into a new PDF',  icon: <Scissors className="h-5 w-5" />,      color: 'bg-blue-500' },
+      { href: '/tools/rotate',       title: 'Rotate PDF',      description: 'Rotate pages 90°, 180° or 270°',         icon: <RotateCw className="h-5 w-5" />,      color: 'bg-indigo-500' },
+      { href: '/tools/compress',     title: 'Compress PDF',    description: 'Reduce file size with Ghostscript',       icon: <Minimize2 className="h-5 w-5" />,     color: 'bg-violet-500' },
+      { href: '/tools/watermark',    title: 'Watermark',       description: 'Add text or image watermarks',            icon: <Droplets className="h-5 w-5" />,      color: 'bg-cyan-500' },
+      { href: '/tools/extract',      title: 'Extract Pages',   description: 'Extract a page range from a PDF',         icon: <FileOutput className="h-5 w-5" />,    color: 'bg-sky-500' },
+      { href: '/tools/delete-pages', title: 'Delete Pages',    description: 'Remove specific pages from a PDF',        icon: <Trash2 className="h-5 w-5" />,        color: 'bg-rose-500' },
+      { href: '/tools/reorder',      title: 'Reorder Pages',   description: 'Rearrange pages in any order',            icon: <AlignJustify className="h-5 w-5" />,  color: 'bg-amber-500' },
     ],
   },
   {
     heading: 'Convert',
     color: 'text-emerald-700',
     tools: [
-      { href: '/tools/word-to-pdf', title: 'Word to PDF', description: 'DOCX/DOC → PDF via LibreOffice', icon: <FileInput className="h-5 w-5" />, color: 'bg-blue-700' },
-      { href: '/tools/excel-to-pdf', title: 'Excel to PDF', description: 'XLSX/XLS → PDF via LibreOffice', icon: <FileSpreadsheet className="h-5 w-5" />, color: 'bg-emerald-600' },
-      { href: '/tools/ppt-to-pdf', title: 'PPT to PDF', description: 'PPTX/PPT → PDF via LibreOffice', icon: <Presentation className="h-5 w-5" />, color: 'bg-orange-500' },
-      { href: '/tools/pdf-to-word', title: 'PDF to Word', description: 'Convert PDF to editable DOCX', icon: <FileType className="h-5 w-5" />, color: 'bg-blue-600', badge: 'Slow', badgeVariant: 'orange' as const },
-      { href: '/tools/image-to-pdf', title: 'Image to PDF', description: 'PNG/JPEG/WebP/TIFF → PDF', icon: <Image className="h-5 w-5" />, color: 'bg-pink-500' },
-      { href: '/tools/pdf-to-image', title: 'PDF to Image', description: 'Convert PDF pages to PNG or JPG', icon: <FileImage className="h-5 w-5" />, color: 'bg-purple-500' },
+      { href: '/tools/word-to-pdf',    title: 'Word to PDF',      description: 'DOCX/DOC → PDF via LibreOffice',          icon: <FileInput className="h-5 w-5" />,      color: 'bg-blue-700' },
+      { href: '/tools/excel-to-pdf',   title: 'Excel to PDF',     description: 'XLSX/XLS → PDF via LibreOffice',          icon: <FileSpreadsheet className="h-5 w-5" />, color: 'bg-emerald-600' },
+      { href: '/tools/ppt-to-pdf',     title: 'PPT to PDF',       description: 'PPTX/PPT → PDF via LibreOffice',          icon: <Presentation className="h-5 w-5" />,   color: 'bg-orange-500' },
+      { href: '/tools/pdf-to-word',    title: 'PDF to Word',      description: 'Convert PDF to editable DOCX',            icon: <FileType className="h-5 w-5" />,       color: 'bg-blue-600',   badge: 'Slow', badgeVariant: 'orange' as const },
+      { href: '/tools/pdf-to-text',    title: 'PDF to Text',      description: 'Extract all text content from a PDF',     icon: <FileText className="h-5 w-5" />,       color: 'bg-slate-600' },
+      { href: '/tools/image-to-pdf',   title: 'Image to PDF',     description: 'Single PNG/JPEG/WebP/TIFF → PDF',         icon: <Image className="h-5 w-5" />,          color: 'bg-pink-500' },
+      { href: '/tools/images-to-pdf',  title: 'Images to PDF',    description: 'Combine multiple images into one PDF',    icon: <Images className="h-5 w-5" />,         color: 'bg-fuchsia-500' },
+      { href: '/tools/pdf-to-image',   title: 'PDF to Image',     description: 'Convert PDF pages to PNG or JPG',         icon: <FileImage className="h-5 w-5" />,      color: 'bg-purple-500' },
+      { href: '/tools/svg-to-pdf',     title: 'SVG to PDF',       description: 'Convert SVG vector graphics to PDF',      icon: <Shapes className="h-5 w-5" />,         color: 'bg-teal-500' },
+      { href: '/tools/html-to-pdf',    title: 'HTML to PDF',      description: 'URL, HTML code or file → PDF via Chrome', icon: <Globe className="h-5 w-5" />,          color: 'bg-green-600',  badge: 'New', badgeVariant: 'green' as const },
     ],
   },
   {
     heading: 'Security & Metadata',
     color: 'text-rose-700',
     tools: [
-      { href: '/tools/protect', title: 'Protect PDF', description: 'Add AES-256 password protection', icon: <Lock className="h-5 w-5" />, color: 'bg-slate-700' },
-      { href: '/tools/unlock', title: 'Unlock PDF', description: 'Remove password from a PDF', icon: <Unlock className="h-5 w-5" />, color: 'bg-slate-600' },
-      { href: '/tools/remove-metadata', title: 'Remove Metadata', description: 'Strip all embedded metadata', icon: <ShieldOff className="h-5 w-5" />, color: 'bg-slate-500' },
-      { href: '/tools/pdf-info', title: 'PDF Info', description: 'View full metadata and page details', icon: <Info className="h-5 w-5" />, color: 'bg-teal-600' },
-      { href: '/tools/duplicate', title: 'Duplicate Pages', description: 'Duplicate specific pages in a PDF', icon: <Copy className="h-5 w-5" />, color: 'bg-amber-600' },
+      { href: '/tools/protect',         title: 'Protect PDF',       description: 'Add AES-256 password protection',      icon: <Lock className="h-5 w-5" />,      color: 'bg-slate-700' },
+      { href: '/tools/unlock',          title: 'Unlock PDF',        description: 'Remove password from a PDF',           icon: <Unlock className="h-5 w-5" />,    color: 'bg-slate-600' },
+      { href: '/tools/remove-metadata', title: 'Remove Metadata',   description: 'Strip all embedded metadata',          icon: <ShieldOff className="h-5 w-5" />, color: 'bg-slate-500' },
+      { href: '/tools/pdf-info',        title: 'PDF Info',          description: 'View full metadata and page details',  icon: <Info className="h-5 w-5" />,      color: 'bg-teal-600' },
+      { href: '/tools/duplicate',       title: 'Duplicate Pages',   description: 'Duplicate specific pages in a PDF',    icon: <Copy className="h-5 w-5" />,      color: 'bg-amber-600' },
     ],
   },
 ];
 
 export default function HomePage() {
+  const totalTools = toolGroups.reduce((sum, g) => sum + g.tools.length, 0);
+
   return (
     <div className="space-y-10">
       {/* Hero */}
@@ -65,7 +76,7 @@ export default function HomePage() {
         {[
           { value: '100 MB', label: 'Max file size' },
           { value: '1 hour', label: 'Auto-delete' },
-          { value: '20+', label: 'Free tools' },
+          { value: `${totalTools}`, label: 'Free tools' },
         ].map(({ value, label }) => (
           <div key={label} className="rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm sm:p-4">
             <p className="text-xl font-extrabold text-slate-900 sm:text-2xl">{value}</p>
