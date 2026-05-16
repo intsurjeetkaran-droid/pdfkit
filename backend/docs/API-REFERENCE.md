@@ -1,6 +1,6 @@
 # API Reference
 
-**PDFKit v2.0 — Complete Endpoint Reference**  
+**PDFKit v3.0 — Complete Endpoint Reference**  
 **Base URL:** `http://localhost:3000`  
 **Auth:** None required
 
@@ -21,13 +21,35 @@
 | POST | `/api/convert/excel-to-pdf` | XLSX/XLS → PDF |
 | POST | `/api/convert/ppt-to-pdf` | PPTX/PPT → PDF |
 | POST | `/api/convert/pdf-to-image` | PDF → PNG/JPG |
-| POST | `/api/convert/image-to-pdf` | Image → PDF |
+| POST | `/api/convert/image-to-pdf` | Single image → PDF |
 | POST | `/api/convert/compress` | Compress PDF |
 | POST | `/api/convert/pdf-to-word` | PDF → DOCX |
+| POST | `/api/convert/pdf-to-text` | PDF → TXT ← **v3.0** |
+| POST | `/api/convert/svg-to-pdf` | SVG → PDF ← **v3.0** |
+| POST | `/api/convert/images-to-pdf` | Multiple images → PDF ← **v3.0** |
+| POST | `/api/html/string-to-pdf` | HTML string → PDF ← **v3.0** |
+| POST | `/api/html/file-to-pdf` | HTML file → PDF ← **v3.0** |
+| POST | `/api/html/url-to-pdf` | URL → PDF ← **v3.0** |
 | POST | `/api/storage/upload-temp` | Upload file (guest) |
 | GET | `/api/storage/temp/:id` | Get file info |
 | GET | `/api/storage/temp/:id/download` | Download file |
 | DELETE | `/api/storage/temp/:id` | Delete file |
+| GET | `/api/storage/stats` | Storage statistics |
+| POST | `/api/storage/cleanup` | Trigger cleanup |
+| POST | `/api/organize/reorder` | Reorder pages |
+| POST | `/api/organize/duplicate` | Duplicate pages |
+| POST | `/api/organize/remove` | Remove pages |
+| POST | `/api/security/protect` | Add AES-256 password |
+| POST | `/api/security/unlock` | Remove password |
+| POST | `/api/security/remove-metadata` | Strip all metadata |
+| POST | `/api/meta/info` | Full PDF metadata |
+| POST | `/api/meta/page-count` | Fast page count |
+| POST | `/api/meta/preview` | PNG thumbnail |
+| POST | `/api/queue/jobs` | Add queue job |
+| GET | `/api/queue/jobs/:queue/:id` | Get job status |
+| GET | `/api/queue/stats` | Queue stats |
+| POST | `/api/queue/jobs/:queue/:id/retry` | Retry failed job |
+| GET | `/health` | Gateway health |
 | GET | `/api/storage/stats` | Storage stats |
 | POST | `/api/storage/cleanup` | Trigger cleanup |
 | POST | `/api/organize/reorder` | Reorder pages |
@@ -961,4 +983,180 @@ Content-Disposition: inline; filename="preview-page-1.png"
 400: { "success": false, "message": "PDF file is required" }
 400: { "success": false, "message": "Invalid page 999. PDF has 5 pages." }
 400: { "success": false, "message": "Invalid or corrupt PDF: ..." }
+```
+
+
+---
+
+## New in v3.0
+
+### POST /api/convert/pdf-to-text
+
+Extract all text content from a PDF.
+
+**Request**
+```
+Content-Type: multipart/form-data
+Field: file  (PDF)
+```
+
+**Response** `200 OK`
+```
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="document.txt"
+[text content]
+```
+
+**Notes**
+- Uses `pdftotext -layout -enc UTF-8` (poppler-utils)
+- Text-layer PDFs extract perfectly
+- Scanned PDFs may produce empty output (no OCR)
+- Very fast: typically 10–100ms
+
+**Errors**
+```json
+400: { "success": false, "message": "PDF file is required" }
+400: { "success": false, "message": "Expected PDF file, got: image/png" }
+```
+
+---
+
+### POST /api/convert/svg-to-pdf
+
+Convert an SVG vector graphic to PDF.
+
+**Request**
+```
+Content-Type: multipart/form-data
+Field: file         (SVG — image/svg+xml)
+Field: pageSize     "A4" | "Letter" | "auto"  (default: A4)
+Field: orientation  "portrait" | "landscape"  (default: portrait)
+```
+
+**Response** `200 OK` — `application/pdf`
+
+**Notes**
+- SVG is rasterized via sharp then embedded in pdf-lib
+- Image is centered and scaled to fit while preserving aspect ratio
+- `auto` uses the SVG's own dimensions as the page size
+
+**Errors**
+```json
+400: { "success": false, "message": "SVG file is required" }
+400: { "success": false, "message": "Expected SVG file, got: image/png" }
+```
+
+---
+
+### POST /api/convert/images-to-pdf
+
+Combine multiple images into a single PDF (one image per page).
+
+**Request**
+```
+Content-Type: multipart/form-data
+Field: files        (array of images — PNG/JPEG/WebP/TIFF/BMP, max 50)
+Field: pageSize     "A4" | "Letter" | "auto"  (default: A4)
+Field: orientation  "portrait" | "landscape"  (default: portrait)
+Field: margin       0–100 points              (default: 0)
+Field: fit          "contain" | "cover" | "stretch"  (default: contain)
+Field: order        JSON array of 0-indexed positions (optional)
+```
+
+**Fit modes:**
+- `contain` — scale to fit inside page, preserve aspect ratio
+- `cover` — scale to fill page, may crop edges
+- `stretch` — stretch to fill exactly, ignores aspect ratio
+
+**Response** `200 OK` — `application/pdf`
+
+**Errors**
+```json
+400: { "success": false, "message": "At least one image file is required" }
+400: { "success": false, "message": "Maximum 50 images per request" }
+400: { "success": false, "message": "Expected image file, got: application/pdf" }
+```
+
+---
+
+### POST /api/html/string-to-pdf
+
+Convert a raw HTML string to PDF using headless Chromium.
+
+**Request** `application/json`
+```json
+{
+  "html": "<html><body><h1>Hello</h1></body></html>",
+  "format": "A4",
+  "landscape": false,
+  "printBackground": true,
+  "scale": 1,
+  "marginTop": "20mm",
+  "marginRight": "15mm",
+  "marginBottom": "20mm",
+  "marginLeft": "15mm",
+  "waitUntil": "networkidle0"
+}
+```
+
+**Required:** `html` (max 5MB)  
+**Response** `200 OK` — `application/pdf`  
+**Rate limit:** 20/hour
+
+**Errors**
+```json
+400: { "success": false, "message": "html string is required in the request body" }
+400: { "success": false, "message": "HTML content too large. Maximum is 5MB" }
+```
+
+---
+
+### POST /api/html/file-to-pdf
+
+Convert an uploaded HTML file to PDF.
+
+**Request**
+```
+Content-Type: multipart/form-data
+Field: file         (HTML file — text/html, .html, .htm, max 10MB)
+Field: format       "A4" | "A3" | "Letter" | "Legal" | "Tabloid"
+Field: landscape    "true" | "false"
+Field: printBackground  "true" | "false"
+Field: scale        "0.1"–"2"
+Field: marginTop / marginRight / marginBottom / marginLeft  (CSS units)
+Field: waitUntil    "load" | "domcontentloaded" | "networkidle0" | "networkidle2"
+```
+
+**Response** `200 OK` — `application/pdf`  
+**Rate limit:** 20/hour
+
+---
+
+### POST /api/html/url-to-pdf
+
+Navigate to a public URL and render it as PDF.
+
+**Request** `application/json`
+```json
+{
+  "url": "https://example.com",
+  "format": "A4",
+  "landscape": false,
+  "printBackground": true,
+  "waitUntil": "networkidle2"
+}
+```
+
+**Required:** `url` (must be `http://` or `https://`)  
+**Response** `200 OK` — `application/pdf`  
+**Rate limit:** 20/hour  
+**Timeout:** 30 seconds
+
+**Security:** Only public http/https URLs. Localhost and internal IPs are blocked.
+
+**Errors**
+```json
+400: { "success": false, "message": "url is required in the request body" }
+400: { "success": false, "message": "Invalid URL format" }
+400: { "success": false, "message": "Only http and https URLs are supported" }
 ```

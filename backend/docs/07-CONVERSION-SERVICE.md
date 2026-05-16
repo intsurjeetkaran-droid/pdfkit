@@ -1,209 +1,168 @@
 # Conversion Service
 
 **Port:** 3002  
-**Version:** 2.0.0  
-**No auth required**  
-**Tests:** ✅ 31/31 passing
+**Version:** 3.0.0  
+**No auth required**
 
 ---
 
 ## Overview
 
-Handles all file format conversions. Every handler validates MIME type before calling the external tool, so wrong file types return 400 instead of crashing with 500.
+Handles all file format conversions. Every handler validates MIME type before calling the external tool — wrong file types return `400`, not `500`.
 
 ---
 
-## System Dependencies
+## System Dependencies (Docker)
 
-Must be installed in the Docker container:
-
-| Tool | Used for |
-|------|---------|
-| LibreOffice | office→pdf, pdf→word |
-| Ghostscript (`gs`) | PDF compression |
-| poppler-utils (`pdftoppm`) | pdf→image |
-| sharp (npm) | image→pdf (no external tool needed) |
-
----
-
-## MIME Validation
-
-Each route validates the file type before processing:
-
-| Route | Accepted MIME types |
-|-------|-------------------|
-| `image-to-pdf` | `image/png`, `image/jpeg`, `image/webp`, `image/tiff`, `image/bmp` |
-| `pdf-to-image` | `application/pdf` only |
-| `compress` | `application/pdf` only |
-| `pdf-to-word` | `application/pdf` only |
-| `word/excel/ppt-to-pdf` | DOCX, DOC, XLSX, XLS, PPTX, PPT |
-
-Sending the wrong type returns `400` with a clear message, not `500`.
-
----
-
-## Timing Logs
-
-Every external tool call logs its own elapsed time:
-
-```
-▶ pdf-to-word started   { inputSizeKB: 245 }
-⚙  exec start           { command: "libreoffice --headless --convert-to docx ..." }
-⚙  exec done            { elapsedMs: 9241 }
-✔ pdf-to-word done      { totalMs: 9244, totalSec: "9.24",
-                          steps: [
-                            { step: "libreoffice-exec", ms: 9241 },
-                            { step: "rename", ms: 2 }
-                          ],
-                          inputSizeKB: 245, outputSizeKB: 312 }
-```
+| Tool | Package | Used for |
+|------|---------|---------|
+| LibreOffice | `libreoffice` (apk) | office→pdf, pdf→word |
+| Ghostscript | `ghostscript` (apk) | PDF compression |
+| pdftoppm | `poppler-utils` (apk) | pdf→image |
+| pdftotext | `poppler-utils` (apk) | pdf→text |
+| sharp | npm | image→pdf, svg→pdf, images→pdf |
+| pdf-lib | npm | image→pdf, svg→pdf, images→pdf |
 
 ---
 
 ## Routes
 
 ### POST /api/convert/word-to-pdf
-
-**Request**
 ```
-Content-Type: multipart/form-data
-Field: file  (DOCX or DOC only)
+Field: file  (DOCX or DOC)
+Response: application/pdf
+Time: 3–15s (LibreOffice)
 ```
-
-**Response** `200 OK` — `application/pdf`  
-**Typical time:** 3–15 s (LibreOffice startup + conversion)
-
-**Errors**
-```json
-400: { "success": false, "message": "File is required" }
-400: { "success": false, "message": "Expected Office document (DOCX/XLSX/PPTX) file, got: application/pdf" }
-400: { "success": false, "message": "File is empty (0 bytes)" }
-```
-
----
 
 ### POST /api/convert/excel-to-pdf
-
-**Request**
 ```
-Field: file  (XLSX or XLS only)
+Field: file  (XLSX or XLS)
+Response: application/pdf
+Time: 3–15s (LibreOffice)
 ```
-**Response** `200 OK` — `application/pdf`  
-**Typical time:** 3–15 s
-
----
 
 ### POST /api/convert/ppt-to-pdf
-
-**Request**
 ```
-Field: file  (PPTX or PPT only)
+Field: file  (PPTX or PPT)
+Response: application/pdf
+Time: 3–15s (LibreOffice)
 ```
-**Response** `200 OK` — `application/pdf`  
-**Typical time:** 3–15 s
-
----
 
 ### POST /api/convert/pdf-to-image
-
-**Request**
 ```
-Field: file    (PDF only)
+Field: file    (PDF)
 Field: format  "png" | "jpg"  (default: png)
-Field: dpi     "150"           (default: 150, clamped 72–300)
-```
+Field: dpi     72–300         (default: 150)
 
-**Response — Single page PDF** `200 OK`
+Single page → binary image stream
+Multi-page  → JSON: { pageCount, format, dpi, files: [{ page, filename }] }
+Time: 1–5s per page
 ```
-Content-Type: image/png  (or image/jpeg)
-[binary image stream]
-```
-
-**Response — Multi-page PDF** `200 OK`
-```json
-{
-  "success": true,
-  "data": {
-    "pageCount": 5,
-    "format": "png",
-    "dpi": 150,
-    "files": [
-      { "page": 1, "filename": "pdf-img-uuid-001.png" },
-      { "page": 2, "filename": "pdf-img-uuid-002.png" }
-    ]
-  }
-}
-```
-
-**Errors**
-```json
-400: { "success": false, "message": "Expected PDF file, got: image/png" }
-```
-
-**Typical time:** 1–5 s per page at 150 DPI
-
----
 
 ### POST /api/convert/image-to-pdf
-
-**Request**
 ```
-Field: file  (PNG | JPEG | WebP | TIFF | BMP only)
+Field: file  (PNG | JPEG | WebP | TIFF | BMP)
+Response: application/pdf
+Time: 200–800ms (sharp + pdf-lib, no external tools)
 ```
-
-**Response** `200 OK` — `application/pdf`  
-**Typical time:** 200–800 ms (sharp + pdf-lib, no external tools)
-
-**Errors**
-```json
-400: { "success": false, "message": "Expected image (PNG/JPEG/WebP/TIFF/BMP) file, got: application/pdf" }
-```
-
----
 
 ### POST /api/convert/compress
-
-**Request**
 ```
-Field: file     (PDF only)
+Field: file     (PDF)
 Field: quality  "screen" | "ebook" | "printer" | "prepress"  (default: ebook)
+
+Quality levels:
+  screen   → 72 DPI  — smallest, web viewing
+  ebook    → 150 DPI — good balance (default)
+  printer  → 300 DPI — print quality
+  prepress → 300 DPI — professional print, color preserved
+
+Response: application/pdf
+Rate limit: 20/hour (heavy op)
+Time: 2–30s
 ```
 
-**Quality levels:**
+### POST /api/convert/pdf-to-word
+```
+Field: file  (PDF)
+Response: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+Rate limit: 20/hour (heavy op)
+Time: 5–30s
 
-| Value | DPI | Use case |
-|-------|-----|---------|
-| `screen` | 72 | Web viewing, smallest file |
-| `ebook` | 150 | Default, good balance |
-| `printer` | 300 | Print quality |
-| `prepress` | 300 | Professional print, color preserved |
+Note: Uses --infilter='writer_pdf_import' to force LibreOffice Writer mode
+      on Alpine Linux (fixes "no export filter" error on minimal builds).
+      Scanned PDFs produce a DOCX with embedded images, not editable text.
+```
 
-**Note:** Invalid quality values silently fall back to `ebook`.
+### POST /api/convert/pdf-to-text ← NEW in v3.0
+```
+Field: file  (PDF)
+Response: text/plain; charset=utf-8  (.txt download)
+Time: 10–100ms (pdftotext, very fast)
 
-**Response** `200 OK` — `application/pdf`  
-**Rate limit:** 20 per hour (heavy operation)  
-**Typical time:** 2–30 s
+Uses: pdftotext -layout -enc UTF-8
+  -layout  preserves original text layout
+  -enc     ensures Unicode output
+
+Note: Text-layer PDFs extract perfectly.
+      Scanned PDFs may produce empty or garbled output (no OCR).
+```
+
+### POST /api/convert/svg-to-pdf ← NEW in v3.0
+```
+Field: file         (SVG — image/svg+xml)
+Field: pageSize     "A4" | "Letter" | "auto"  (default: A4)
+Field: orientation  "portrait" | "landscape"  (default: portrait)
+
+Response: application/pdf
+Time: 50–200ms (sharp rasterize + pdf-lib embed)
+
+Page sizes (points):
+  A4 portrait:   595.28 × 841.89
+  A4 landscape:  841.89 × 595.28
+  Letter portrait:  612 × 792
+  auto: uses SVG image dimensions
+
+Image is centered and scaled to fit while preserving aspect ratio.
+```
+
+### POST /api/convert/images-to-pdf ← NEW in v3.0
+```
+Field: files        (array of images — up to 50)
+                    Accepted: PNG, JPEG, WebP, TIFF, BMP
+Field: pageSize     "A4" | "Letter" | "auto"  (default: A4)
+Field: orientation  "portrait" | "landscape"  (default: portrait)
+Field: margin       0–100 (points, default: 0)
+Field: fit          "contain" | "cover" | "stretch"  (default: contain)
+Field: order        JSON array of 0-indexed positions (optional)
+
+Response: application/pdf
+Time: 50ms per image (sharp + pdf-lib)
+
+Fit modes:
+  contain  — scale to fit inside page, preserve aspect ratio (default)
+  cover    — scale to fill page, may crop edges
+  stretch  — stretch to fill exactly, ignores aspect ratio
+
+Max: 50 images per request
+```
 
 ---
 
-### POST /api/convert/pdf-to-word
+## MIME Validation
 
-**Request**
-```
-Field: file  (PDF only)
-```
+| Route | Accepted types |
+|-------|---------------|
+| `word/excel/ppt-to-pdf` | DOCX, DOC, XLSX, XLS, PPTX, PPT |
+| `pdf-to-image` | `application/pdf` |
+| `image-to-pdf` | PNG, JPEG, WebP, TIFF, BMP |
+| `compress` | `application/pdf` |
+| `pdf-to-word` | `application/pdf` |
+| `pdf-to-text` | `application/pdf` |
+| `svg-to-pdf` | `image/svg+xml` |
+| `images-to-pdf` | PNG, JPEG, WebP, TIFF, BMP (all files validated) |
 
-**Response** `200 OK`
-```
-Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
-Content-Disposition: attachment; filename="converted.docx"
-[binary DOCX stream]
-```
-
-**Rate limit:** 20 per hour (heavy operation)  
-**Typical time:** 5–30 s
-
-**Note:** LibreOffice's PDF import is text-layer based. Scanned PDFs produce a DOCX with embedded images rather than editable text.
+Wrong type → `400 { "success": false, "message": "Expected X file, got: Y" }`
 
 ---
 
@@ -212,4 +171,4 @@ Content-Disposition: attachment; filename="converted.docx"
 | Limit | Value |
 |-------|-------|
 | Max file size | 100 MB |
-| Allowed MIME types | PDF, PNG, JPEG, WebP, TIFF, BMP, DOCX, DOC, XLSX, XLS, PPTX, PPT |
+| Max images (images-to-pdf) | 50 files |
