@@ -1,20 +1,25 @@
 # PDFKit
 
 **Guest-First PDF Utility Platform — No Signup Required**
-**Version:** 3.1.0 | **Status:** ✅ Production Ready | **Services:** 9 microservices | **Operations:** 39
+**Version:** 3.2.0 | **Status:** ✅ Production Ready | **Services:** 9 microservices | **Operations:** 39 backend / 23 frontend tools
 
 > Upload a file, process it, download the result. Files auto-delete after 1 hour. No account needed.
-> Inspired by iLovePDF, Smallpdf, and PDF24 — built as a fully scalable microservice backend with a Next.js frontend.
 
 ---
 
-## What's New in v3.1.0
+## What's New in v3.2.0
 
-- **Kubernetes support** — full manifests for all 9 services with HPA auto-scaling (2–10 pods per service)
-- **MinIO shared storage** — S3-compatible object storage enabling true horizontal scaling
-- **Oracle Cloud deployment guide** — step-by-step deploy to Always Free tier (4 OCPU / 24 GB RAM, $0 forever)
-- **Pod-aware global logging** — every log entry includes service name, pod identity, and per-step timing
-- **services.txt** — complete directory of all 39 platform operations, category-wise
+- **Landing page** — full redesign split into 10 section components (`sections/`), sticky nav with anchor links, infinite marquee tool carousel, auto-sliding how-it-works carousel
+- **Tools page** — premium redesign with gradient header, category accent bars, hover arrow reveal on cards
+- **Interactive PDF tools** — Delete Pages, Reorder (drag-and-drop), Split, and Duplicate now show visual page thumbnails instead of text input fields
+- **`PdfPageGrid` component** — shared visual page grid with click-to-mark, drag-to-reorder, and click-to-select modes
+- **Logo** — custom SVG logo (file + star) implemented across Header, Footer, and landing nav
+- **Footer** — 4-column layout (PDF Tools, Convert, Security, Company) with slide-in underline hover effect on all links
+- **6 company pages** — About, Privacy, Terms, Contact, Cookies, DMCA — all content-accurate, no tech stack leaks
+- **FileDropzone** — larger upload area (260px min-height), prominent Upload icon, "Choose file" button hint
+- **ToolLayout** — header card with larger icon (h-14 w-14), auto-scales child icon size
+- **Viewport fill** — tool pages fill the full viewport so footer is always below the fold
+- **"20+" everywhere** — consistent tool count across landing, tools page, and all CTAs
 
 ---
 
@@ -233,51 +238,84 @@ pdfkit/
 ├── backend/
 │   ├── api-gateway/           :3000  single entry point, pure proxy
 │   ├── pdf-service/           :3001  7 PDF operations (pdf-lib)
-│   ├── conversion-service/    :3002  10 conversions (LibreOffice, Ghostscript, sharp)
+│   ├── conversion-service/    :3002  10 conversions
 │   ├── storage-service/       :3003  upload/download/TTL (MySQL + MinIO)
 │   ├── queue-service/         :3006  BullMQ 8 queues + Bull Board UI
 │   ├── organization-service/  :3007  reorder/duplicate/remove (pdf-lib)
 │   ├── security-service/      :3008  protect/unlock/strip-metadata (qpdf)
-│   ├── metadata-service/      :3009  info/page-count/preview (pdf-lib + pdftoppm)
+│   ├── metadata-service/      :3009  info/page-count/preview
 │   ├── html-service/          :3010  html/url/string → pdf (Chromium)
 │   ├── shared/
 │   │   ├── logger/            global logger factory (pod-aware, JSON in prod)
-│   │   ├── utils/
-│   │   │   ├── minioClient.ts shared MinIO client (upload/download/stream/delete)
-│   │   │   └── timer.ts       per-step timing utility
-│   │   ├── types/             TypeScript interfaces
-│   │   └── constants/         MIME types, queue names, HTTP codes
-│   ├── k8s/                   Kubernetes manifests
-│   │   ├── namespace.yaml
-│   │   ├── configmap.yaml
-│   │   ├── secrets.yaml
-│   │   ├── ingress.yaml
-│   │   ├── deploy.sh          one-command deploy script
-│   │   ├── infrastructure/    MySQL + Redis + MinIO StatefulSets/Deployments
-│   │   └── */                 per-service Deployment + Service + HPA
+│   │   └── utils/
+│   │       ├── minioClient.ts shared MinIO client
+│   │       └── timer.ts       per-step timing utility
+│   ├── k8s/                   Kubernetes manifests (all 9 services + infra)
 │   ├── docs/                  full API and service documentation
 │   ├── tests/                 342 tests across 9 suites
 │   └── docker-compose.yml     12 containers (9 services + MySQL + Redis + MinIO)
 │
 ├── frontend/
-│   └── src/app/tools/         23 tool pages (Next.js 15, Tailwind CSS v4)
+│   └── src/
+│       ├── app/
+│       │   ├── page.tsx               → redirects to landing page
+│       │   ├── landing/               Landing page (/)
+│       │   │   ├── page.tsx           wrapper — imports all sections
+│       │   │   └── sections/          one file per section
+│       │   │       ├── NavSection.tsx         sticky nav + mobile menu
+│       │   │       ├── HeroSection.tsx        dark hero + CTAs + tool pills
+│       │   │       ├── StatsSection.tsx       4 stat cards
+│       │   │       ├── WhySection.tsx         6 feature cards
+│       │   │       ├── CompareSection.tsx     comparison table
+│       │   │       ├── HowItWorksSection.tsx  auto-sliding 3-step carousel
+│       │   │       ├── ToolsHighlightSection.tsx  infinite marquee
+│       │   │       ├── TrustSection.tsx       4 privacy cards
+│       │   │       ├── CtaSection.tsx         final CTA banner
+│       │   │       └── FooterSection.tsx      4-column footer
+│       │   └── (main)/                Pages with shared Header + Footer
+│       │       ├── layout.tsx         Header + Footer + min-h viewport fill
+│       │       ├── tools/
+│       │       │   ├── page.tsx       tools grid — premium card design
+│       │       │   ├── merge/         Merge PDF
+│       │       │   ├── split/         Split PDF — visual page grid
+│       │       │   ├── rotate/        Rotate PDF
+│       │       │   ├── compress/      Compress PDF
+│       │       │   ├── watermark/     Watermark PDF
+│       │       │   ├── extract/       Extract Pages
+│       │       │   ├── delete-pages/  Delete Pages — visual page grid + X buttons
+│       │       │   ├── reorder/       Reorder Pages — drag-and-drop grid
+│       │       │   ├── duplicate/     Duplicate Pages — click-to-select grid
+│       │       │   ├── word-to-pdf/   Word → PDF
+│       │       │   ├── excel-to-pdf/  Excel → PDF
+│       │       │   ├── ppt-to-pdf/    PPT → PDF
+│       │       │   ├── pdf-to-word/   PDF → Word
+│       │       │   ├── pdf-to-text/   PDF → Text
+│       │       │   ├── image-to-pdf/  Image → PDF
+│       │       │   ├── images-to-pdf/ Multiple images → PDF
+│       │       │   ├── pdf-to-image/  PDF → Images
+│       │       │   ├── svg-to-pdf/    SVG → PDF
+│       │       │   ├── html-to-pdf/   HTML/URL/string → PDF
+│       │       │   ├── protect/       Protect PDF
+│       │       │   ├── unlock/        Unlock PDF
+│       │       │   ├── remove-metadata/ Remove Metadata
+│       │       │   └── pdf-info/      PDF Info
+│       │       ├── about/             About Us
+│       │       ├── privacy/           Privacy Policy
+│       │       ├── terms/             Terms of Service
+│       │       ├── contact/           Contact Us
+│       │       ├── cookies/           Cookie Policy
+│       │       └── dmca/              DMCA & Copyright
+│       └── components/
+│           ├── Logo.tsx               Custom SVG logo (file + star icon)
+│           ├── PdfPageGrid.tsx        Interactive page grid (delete/reorder/duplicate)
+│           ├── FileDropzone.tsx       Large upload area with prominent icon
+│           ├── ToolLayout.tsx         Tool page wrapper with header card
+│           ├── Header.tsx             Sticky nav with dropdown menus
+│           ├── Footer.tsx             4-column footer with hover underline links
+│           └── ...                    other shared components
 │
-├── deployment/                Oracle Cloud Always Free deployment guide
-│   ├── 00-INDEX.txt           start here — checklist + free tier limits
-│   ├── 01-oracle-account-setup.txt
-│   ├── 02-server-initial-setup.txt
-│   ├── 03-project-deploy.txt
-│   ├── 04-nginx-ssl.txt
-│   ├── 05-domain-setup.txt
-│   ├── 06-monitoring.txt
-│   ├── 07-managing.txt
-│   ├── 08-troubleshooting.txt
-│   ├── 09-oracle-cloud-console.txt
-│   ├── 10-security-hardening.txt
-│   ├── 11-performance-tuning.txt
-│   └── 12-quick-reference.txt
-│
-└── services.txt               all 39 operations, category-wise with full details
+├── deployment/                Oracle Cloud Always Free deployment guide (12 files)
+└── services.txt               39 backend API operations, category-wise
 ```
 
 ---
@@ -430,6 +468,23 @@ node tests/run.js --skip 01    # skip infra (faster)
 ---
 
 ## Changelog
+
+### v3.2.0 — May 2026
+- Landing page split into 10 section components under `landing/sections/`
+- Landing nav with section anchor links + mobile hamburger menu
+- How-it-works section: auto-sliding carousel (3s interval, progress bar, click tabs)
+- Popular tools section: infinite horizontal marquee with pause-on-hover
+- Tools page: premium redesign — gradient header banner, category accent bars, hover arrow reveal
+- Interactive PDF tools: Delete Pages (X buttons), Reorder (drag-and-drop), Split (click-to-select), Duplicate (click-to-select) — all use visual page thumbnails via `PdfPageGrid` component
+- Custom SVG Logo component (file + star) — Header, Footer, landing nav
+- Footer: 4-column layout with slide-in underline hover effect on all links
+- FileDropzone: larger (260px), prominent Upload icon, "Choose file" button
+- ToolLayout: header card, larger icon container (h-14 w-14), auto-scales child icons
+- Viewport fill: tool pages always push footer below the fold
+- 6 company pages: About, Privacy, Terms, Contact, Cookies, DMCA — content-accurate
+- Consistent "20+" tool count across all pages and CTAs
+- Removed competitor name references from comparison section
+- Removed tech stack disclosures from public-facing pages
 
 ### v3.1.0 — May 2026
 - Kubernetes manifests for all 9 services (Deployments, Services, HPAs, Ingress)

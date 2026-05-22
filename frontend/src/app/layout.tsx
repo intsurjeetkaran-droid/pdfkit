@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist } from 'next/font/google';
 import './globals.css';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
 
@@ -26,12 +24,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={geist.variable}>
+      {/*
+        Body has no Header/Footer here — those live in (main)/layout.tsx.
+        The landing page at /landing gets its own full-screen layout.
+      */}
       <body className="min-h-dvh flex flex-col bg-slate-50 text-slate-900 antialiased">
-        <Header />
-        <main className="flex-1 w-full max-w-6xl mx-auto px-4 py-6 sm:py-10">
-          {children}
-        </main>
-        <Footer />
+        {children}
       </body>
     </html>
   );

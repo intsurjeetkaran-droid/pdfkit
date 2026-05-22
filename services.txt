@@ -1,9 +1,14 @@
-PDFKit — Complete Platform Services Directory
-=============================================
+PDFKit — Complete Backend API Services Directory
+=================================================
 Version: 3.1.0  |  All services are guest-first (no login required)
 Base URL: https://yourdomain.com  (or http://YOUR_IP in dev)
 Max file size: 100 MB  |  File TTL: 1 hour auto-delete
 Rate limit: 100 req / 15 min / IP  (heavy ops: 20 req / hour)
+
+NOTE: This file documents all 39 backend API operations across 8 microservices.
+      The frontend at /tools exposes 23 user-facing tool pages.
+      The difference is because storage, queue, and some metadata/organization
+      operations are internal/programmatic and have no dedicated frontend UI.
 
 =============================================
 CATEGORY 1 — PDF MANIPULATION

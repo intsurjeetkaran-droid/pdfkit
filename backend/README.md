@@ -1,6 +1,6 @@
 # PDFKit Backend
 
-**Version:** 3.1.0 — Kubernetes-Ready PDF Platform  
+**Version:** 3.2.0 — Kubernetes-Ready PDF Platform  
 **Status:** ✅ Production Ready — 9 Services + Kubernetes Manifests  
 **Last Updated:** May 22, 2026
 

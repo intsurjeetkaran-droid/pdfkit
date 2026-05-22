@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Menu, X, FileText, ChevronDown } from 'lucide-react';
+import { Menu, X, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import Logo from '@/components/Logo';
 
 const navGroups = [
   {
@@ -51,16 +52,14 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-        {/* Logo */}
+        {/* Logo — goes back to landing page */}
         <Link
           href="/"
-          className="flex items-center gap-2 font-bold text-blue-600 text-lg shrink-0"
+          className="shrink-0"
           onClick={() => setMobileOpen(false)}
+          aria-label="PDFKit home"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-            <FileText className="h-4 w-4" aria-hidden="true" />
-          </div>
-          <span>PDFKit</span>
+          <Logo size="md" />
         </Link>
 
         {/* Desktop nav */}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, DragEvent, ChangeEvent } from 'react';
-import { UploadCloud, FileText } from 'lucide-react';
+import { Upload, FileText, CloudUpload } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface FileDropzoneProps {
@@ -29,7 +29,11 @@ export default function FileDropzone({
   const [dragging, setDragging] = useState(false);
 
   const hasFile = file || (files && files.length > 0);
-  const displayName = file?.name ?? (files && files.length > 0 ? `${files.length} file${files.length > 1 ? 's' : ''} selected` : null);
+  const displayName =
+    file?.name ??
+    (files && files.length > 0
+      ? `${files.length} file${files.length > 1 ? 's' : ''} selected`
+      : null);
 
   function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -55,44 +59,76 @@ export default function FileDropzone({
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       className={cn(
-        'relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 cursor-pointer transition-all duration-200 select-none min-h-[160px]',
+        'relative flex flex-col items-center justify-center gap-5 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-200 select-none',
+        /* Taller — fills more of the viewport */
+        'min-h-[260px] px-8 py-12',
         dragging
-          ? 'border-blue-500 bg-blue-50 scale-[1.01]'
+          ? 'border-blue-500 bg-blue-50 scale-[1.01] shadow-lg shadow-blue-100'
           : hasFile
           ? 'border-blue-400 bg-blue-50/60'
-          : 'border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40',
+          : 'border-slate-300 bg-slate-50/80 hover:border-blue-400 hover:bg-blue-50/50 hover:shadow-md',
         className
       )}
     >
       {hasFile ? (
+        /* ── File selected state ── */
         <>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
-            <FileText className="h-6 w-6 text-blue-600" aria-hidden="true" />
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 shadow-sm">
+            <FileText className="h-8 w-8 text-blue-600" aria-hidden="true" />
           </div>
-          <div className="text-center">
-            <p className="text-sm font-semibold text-slate-800 truncate max-w-[240px]">{displayName}</p>
+          <div className="text-center space-y-1">
+            <p className="text-base font-bold text-slate-800 truncate max-w-[280px]">
+              {displayName}
+            </p>
             {file && (
-              <p className="text-xs text-slate-400 mt-0.5">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              <p className="text-sm text-slate-400">
+                {(file.size / 1024 / 1024).toFixed(2)} MB
+              </p>
             )}
-            <p className="text-xs text-blue-500 mt-1">Click to change file</p>
+            <p className="text-sm font-medium text-blue-500 mt-1">
+              Click to change file
+            </p>
           </div>
         </>
       ) : (
+        /* ── Empty / drag state ── */
         <>
+          {/* Large upload icon */}
           <div className={cn(
-            'flex h-12 w-12 items-center justify-center rounded-xl transition-colors',
-            dragging ? 'bg-blue-200' : 'bg-slate-200'
+            'flex h-20 w-20 items-center justify-center rounded-2xl transition-all duration-200 shadow-sm',
+            dragging
+              ? 'bg-blue-200 scale-110'
+              : 'bg-white border border-slate-200 group-hover:border-blue-300'
           )}>
-            <UploadCloud className={cn('h-6 w-6 transition-colors', dragging ? 'text-blue-600' : 'text-slate-500')} aria-hidden="true" />
+            {dragging ? (
+              <CloudUpload className="h-10 w-10 text-blue-600" aria-hidden="true" />
+            ) : (
+              <Upload className="h-10 w-10 text-blue-500" aria-hidden="true" />
+            )}
           </div>
-          <div className="text-center">
-            <p className="text-sm font-semibold text-slate-700">
-              {label ?? (multiple ? 'Drop files here' : 'Drop file here')}
+
+          {/* Text */}
+          <div className="text-center space-y-1.5">
+            <p className="text-base font-bold text-slate-800">
+              {label ?? (multiple ? 'Drop files here' : 'Drop your file here')}
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {sublabel ?? 'or tap to browse'}
+            <p className="text-sm text-slate-400">
+              {sublabel ?? 'or click to browse from your device'}
             </p>
           </div>
+
+          {/* Browse button hint */}
+          <div className={cn(
+            'rounded-xl border px-5 py-2 text-sm font-semibold transition-all duration-150',
+            dragging
+              ? 'border-blue-400 bg-blue-100 text-blue-700'
+              : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600'
+          )}>
+            Choose file{multiple ? 's' : ''}
+          </div>
+
+          {/* Max size note */}
+          <p className="text-xs text-slate-400">Maximum file size: 100 MB</p>
         </>
       )}
 
