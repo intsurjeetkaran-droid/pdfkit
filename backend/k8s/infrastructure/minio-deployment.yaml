@@ -1,0 +1,155 @@
+# =============================================================================
+# MinIO — S3-Compatible Object Storage
+#
+# WHY MinIO is required for Kubernetes:
+#   In Docker Compose, each service writes files to local volumes on the same
+#   host. With Kubernetes, pods can be scheduled on different nodes, so Pod A
+#   might write a file but Pod B handles the download — it won't find the file.
+#
+#   MinIO solves this by providing a single shared storage endpoint that ALL
+#   pods across ALL services read from and write to, regardless of which node
+#   they run on.
+#
+# Buckets created at startup:
+#   - pdfkit-uploads:  temporary uploaded files (1-hour TTL)
+#   - pdfkit-outputs:  processed output files (deleted after download)
+#
+# Access:
+#   - Internal: http://minio:9000  (used by all services)
+#   - Console:  http://minio:9001  (admin UI — expose via NodePort for debugging)
+#
+# For production at scale, consider:
+#   - MinIO Operator with distributed mode (4+ nodes)
+#   - AWS S3 / GCP Cloud Storage / Azure Blob (no self-hosting needed)
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi   # Adjust based on expected file volume
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: storage
+spec:
+  replicas: 1   # Single node MinIO — use MinIO Operator for distributed mode
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+        app.kubernetes.io/name: minio
+        app.kubernetes.io/component: storage
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          ports:
+            - containerPort: 9000
+              name: api
+            - containerPort: 9001
+              name: console
+          env:
+            # Credentials from Secret
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ROOT_PASSWORD
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+          # MinIO health check endpoint
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: minio-pvc
+---
+# ClusterIP Service — internal access at minio:9000
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: storage
+spec:
+  selector:
+    app: minio
+  ports:
+    - port: 9000
+      targetPort: 9000
+      name: api
+    - port: 9001
+      targetPort: 9001
+      name: console
+---
+# NodePort Service — expose MinIO console for debugging (remove in production)
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-console
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: storage-console
+spec:
+  type: NodePort
+  selector:
+    app: minio
+  ports:
+    - port: 9001
+      targetPort: 9001
+      nodePort: 30901   # Access at http://<node-ip>:30901
+      name: console

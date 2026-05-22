@@ -1,0 +1,142 @@
+STEP 10 — Security Hardening
+==============================
+
+Do these before going live. Takes ~20 minutes.
+
+
+1. CHANGE ALL DEFAULT PASSWORDS
+---------------------------------
+# Edit docker-compose.yml and change:
+nano ~/PDFkit/backend/docker-compose.yml
+
+  MySQL:
+    MYSQL_ROOT_PASSWORD: USE_A_STRONG_RANDOM_PASSWORD_HERE
+    DATABASE_URL: mysql://root:SAME_PASSWORD@mysql:3306/pdfkit
+
+  MinIO:
+    MINIO_ROOT_USER: pdfkit_admin
+    MINIO_ROOT_PASSWORD: USE_ANOTHER_STRONG_PASSWORD_HERE
+    MINIO_ACCESS_KEY: pdfkit_admin
+    MINIO_SECRET_KEY: SAME_MINIO_PASSWORD
+
+# Generate strong passwords:
+openssl rand -base64 32
+
+
+2. DISABLE TEST MODE
+---------------------
+# In docker-compose.yml, find api-gateway and set:
+  TEST_MODE: "false"
+
+# This enforces real rate limits:
+#   100 req / 15 min for uploads
+#   20 req / hour for heavy ops (compress, html-to-pdf)
+
+
+3. RESTRICT CORS TO YOUR FRONTEND DOMAIN
+-----------------------------------------
+# In docker-compose.yml, find api-gateway and set:
+  ALLOWED_ORIGINS: "https://yourdomain.com,https://www.yourdomain.com"
+
+# NOT "*" in production
+
+
+4. DISABLE MINIO CONSOLE PORT (after initial setup)
+-----------------------------------------------------
+# Remove port 9001 from OCI Security List
+# Console → Networking → VCN → Subnet → Security List
+# Delete the rule for port 9001
+
+# Access MinIO console via SSH tunnel instead:
+# From your local machine:
+ssh -L 9001:localhost:9001 -i pdfkit-server.key ubuntu@YOUR_IP
+# Then open: http://localhost:9001 in your browser
+
+
+5. SECURE SSH
+--------------
+sudo nano /etc/ssh/sshd_config
+
+# Change or verify these settings:
+  PermitRootLogin no
+  PasswordAuthentication no
+  PubkeyAuthentication yes
+  MaxAuthTries 3
+
+sudo systemctl restart sshd
+
+# NOTE: Make sure your SSH key works BEFORE disabling password auth
+
+
+6. FAIL2BAN (block brute force attacks)
+-----------------------------------------
+sudo apt install -y fail2ban
+
+sudo nano /etc/fail2ban/jail.local
+# Paste:
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+port = 22
+logpath = /var/log/auth.log
+
+[nginx-http-auth]
+enabled = true
+
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
+
+# Check banned IPs
+sudo fail2ban-client status sshd
+
+
+7. AUTOMATIC SECURITY UPDATES
+-------------------------------
+sudo apt install -y unattended-upgrades
+
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+# Select "Yes" to enable automatic updates
+
+# Verify
+sudo systemctl status unattended-upgrades
+
+
+8. RESTRICT BULL BOARD TO YOUR IP
+-----------------------------------
+# In nginx config, the /admin/queues location should already
+# have your IP restriction (from 04-nginx-ssl.txt)
+# Verify it's set:
+sudo grep -A5 "admin/queues" /etc/nginx/sites-available/pdfkit
+
+# Should show:
+#   allow YOUR_IP;
+#   deny all;
+
+
+9. RATE LIMITING IN NGINX (extra layer)
+-----------------------------------------
+sudo nano /etc/nginx/sites-available/pdfkit
+
+# Add inside the server block, before location /:
+    # Rate limit: 10 requests/second per IP
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+
+# Add inside location /:
+    limit_req zone=api burst=20 nodelay;
+
+sudo nginx -t && sudo systemctl reload nginx
+
+
+10. ENVIRONMENT FILE PERMISSIONS
+----------------------------------
+# Make sure .env is not world-readable
+chmod 600 ~/PDFkit/backend/.env
+chmod 600 ~/PDFkit/backend/docker-compose.yml
+
+# Verify
+ls -la ~/PDFkit/backend/.env
+# Should show: -rw------- (600)

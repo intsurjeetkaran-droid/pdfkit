@@ -1,14 +1,15 @@
 # Documentation Index
 
-**PDFKit v3.0 — Guest-First PDF Platform**  
-**Status:** ✅ 11 Services Running  
-**Last Updated:** May 16, 2026
+**PDFKit v3.1 — Kubernetes-Ready PDF Platform**  
+**Status:** ✅ 9 Services + Kubernetes Auto-Scaling + MinIO  
+**Last Updated:** May 22, 2026
 
 ---
 
 ## Quick Start
 
-→ [GETTING_STARTED.md](./GETTING_STARTED.md)
+→ [GETTING_STARTED.md](./GETTING_STARTED.md)  
+→ [KUBERNETES.md](./KUBERNETES.md) ← **NEW: Deploy to K8s with auto-scaling**
 
 ---
 
@@ -30,6 +31,7 @@
 | [01-PROJECT-OVERVIEW.md](./01-PROJECT-OVERVIEW.md) | Architecture, design decisions, tech stack, timing logs |
 | [03-API-STANDARDS.md](./03-API-STANDARDS.md) | Request/response format, rate limits, file limits |
 | [04-API-GATEWAY.md](./04-API-GATEWAY.md) | Proxy routes, timing logs, 503 handling |
+| [**KUBERNETES.md**](./KUBERNETES.md) | ← **NEW** K8s deploy, HPA, MinIO, troubleshooting |
 
 ---
 
@@ -44,25 +46,34 @@
 | [09-ORGANIZATION-SERVICE.md](./09-ORGANIZATION-SERVICE.md) | reorder/duplicate/remove pages | 3007 | ✅ |
 | [10-SECURITY-SERVICE.md](./10-SECURITY-SERVICE.md) | protect/unlock/remove-metadata | 3008 | ✅ |
 | [11-METADATA-SERVICE.md](./11-METADATA-SERVICE.md) | info/page-count/preview thumbnail | 3009 | ✅ |
-| [12-HTML-SERVICE.md](./12-HTML-SERVICE.md) | html→pdf, url→pdf, string→pdf (Chromium) | 3010 | ✅ NEW |
+| [12-HTML-SERVICE.md](./12-HTML-SERVICE.md) | html→pdf, url→pdf, string→pdf (Chromium) | 3010 | ✅ |
 
 ---
 
-## Service Ports
+## Infrastructure
 
-| Service | Port | Status | Notes |
-|---------|------|--------|-------|
-| API Gateway | 3000 | ✅ | Entry point for all requests |
-| PDF Service | 3001 | ✅ | 7 operations |
-| Conversion Service | 3002 | ✅ | 10 operations |
-| Storage Service | 3003 | ✅ | MySQL-backed, 1hr TTL |
-| Queue Service | 3006 | ✅ | 8 queues, Bull Board at /admin/queues |
-| Organization Service | 3007 | ✅ | 3 operations |
-| Security Service | 3008 | ✅ | qpdf + pdf-lib |
-| Metadata Service | 3009 | ✅ | pdf-lib + pdftoppm |
-| HTML Service | 3010 | ✅ | Chromium, 3 operations |
-| MySQL | 3307 | ✅ | File + Job tables |
-| Redis | 6380 | ✅ | BullMQ + rate limiting |
+| Component | Port | Purpose |
+|-----------|------|---------|
+| MySQL 8 | 3307 | File + Job metadata (storage-service) |
+| Redis 7 | 6380 | BullMQ queues + rate limiting |
+| MinIO | 9000 | **NEW** Shared object storage (all services) |
+| MinIO Console | 9001 | **NEW** Web UI for bucket management |
+
+---
+
+## Kubernetes HPA Scaling
+
+| Service | Min Pods | Max Pods | CPU Threshold |
+|---------|----------|----------|---------------|
+| api-gateway | 2 | 10 | 70% |
+| pdf-service | 2 | 10 | 70% |
+| conversion-service | 2 | 8 | 65% |
+| html-service | 2 | 6 | 65% |
+| storage-service | 2 | 8 | 70% |
+| queue-service | 2 | 4 | 70% |
+| organization-service | 2 | 8 | 70% |
+| security-service | 2 | 8 | 70% |
+| metadata-service | 2 | 8 | 70% |
 
 ---
 

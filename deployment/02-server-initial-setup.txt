@@ -1,0 +1,119 @@
+STEP 2 — Server Initial Setup
+==============================
+
+Replace YOUR_PUBLIC_IP with your actual Oracle VM IP throughout.
+
+
+1. SSH INTO YOUR SERVER
+------------------------
+Windows (PowerShell):
+  ssh -i C:\path\to\pdfkit-server.key ubuntu@YOUR_PUBLIC_IP
+
+Mac/Linux:
+  chmod 400 ~/Downloads/pdfkit-server.key
+  ssh -i ~/Downloads/pdfkit-server.key ubuntu@YOUR_PUBLIC_IP
+
+If you get "WARNING: UNPROTECTED PRIVATE KEY FILE":
+  chmod 400 pdfkit-server.key
+
+
+2. UPDATE SYSTEM
+-----------------
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl wget git unzip htop
+
+
+3. OPEN PORTS IN THE VM FIREWALL (iptables)
+--------------------------------------------
+Oracle Ubuntu images use iptables, NOT ufw.
+You must open ports at BOTH the OCI console (step 1) AND iptables.
+
+# Open HTTP and HTTPS
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+
+# Save rules so they survive reboot
+sudo apt install -y iptables-persistent
+sudo netfilter-persistent save
+
+# Verify rules are saved
+sudo iptables -L INPUT --line-numbers
+
+
+4. INSTALL DOCKER
+------------------
+# Remove any old versions
+sudo apt remove -y docker docker-engine docker.io containerd runc
+
+# Install Docker (official script — works on ARM64)
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Add ubuntu user to docker group (no sudo needed)
+sudo usermod -aG docker ubuntu
+
+# Apply group change without logout
+newgrp docker
+
+# Verify
+docker --version
+# Expected: Docker version 25.x.x or newer
+
+
+5. INSTALL DOCKER COMPOSE
+--------------------------
+# Docker Compose v2 (plugin style)
+sudo apt install -y docker-compose-plugin
+
+# Verify
+docker compose version
+# Expected: Docker Compose version v2.x.x
+
+# Also install standalone for compatibility
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+docker-compose --version
+
+
+6. INSTALL NGINX
+-----------------
+sudo apt install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# Test — should show nginx welcome page
+curl http://localhost
+
+
+7. INSTALL CERTBOT (for free SSL)
+-----------------------------------
+sudo apt install -y certbot python3-certbot-nginx
+
+
+8. SET SWAP (important — prevents OOM on 24GB with heavy services)
+-------------------------------------------------------------------
+# Create 4GB swap file
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# Make permanent
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Verify
+free -h
+# Should show 4.0G swap
+
+
+9. CONFIGURE SYSTEM LIMITS (for Docker + many containers)
+----------------------------------------------------------
+echo "fs.file-max = 65536" | sudo tee -a /etc/sysctl.conf
+echo "vm.max_map_count = 262144" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# Reboot to apply all changes
+sudo reboot
+
+# Wait 30 seconds then SSH back in
+ssh -i pdfkit-server.key ubuntu@YOUR_PUBLIC_IP

@@ -1,0 +1,137 @@
+STEP 4 — Nginx Reverse Proxy + Free SSL
+========================================
+
+Nginx sits in front of everything.
+All traffic hits port 80/443 → Nginx → api-gateway:3000
+
+
+1. CREATE NGINX CONFIG
+-----------------------
+sudo nano /etc/nginx/sites-available/pdfkit
+
+# Paste this (replace yourdomain.com with your actual domain or IP):
+
+server {
+    listen 80;
+    server_name yourdomain.com www.yourdomain.com;
+
+    # Increase body size for PDF uploads (100MB)
+    client_max_body_size 100M;
+
+    # Increase timeouts for heavy operations
+    # LibreOffice/Ghostscript/Chromium can take up to 5 minutes
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_connect_timeout 60s;
+
+    # Forward all traffic to api-gateway
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Bull Board dashboard — restrict to your IP only
+    location /admin/queues {
+        allow YOUR_HOME_IP;   # replace with your IP
+        deny all;
+        proxy_pass http://localhost:3006;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+
+# Save: Ctrl+X → Y → Enter
+
+
+2. ENABLE THE SITE
+-------------------
+# Enable site
+sudo ln -s /etc/nginx/sites-available/pdfkit /etc/nginx/sites-enabled/
+
+# Remove default site
+sudo rm /etc/nginx/sites-enabled/default
+
+# Test config syntax
+sudo nginx -t
+# Expected: "syntax is ok" and "test is successful"
+
+# Reload nginx
+sudo systemctl reload nginx
+
+
+3. TEST WITHOUT SSL FIRST
+--------------------------
+# From your local machine:
+curl http://YOUR_PUBLIC_IP/health
+
+# Should return: {"status":"ok","service":"api-gateway",...}
+# If it works, proceed to SSL setup
+
+
+4. GET FREE SSL CERTIFICATE (Let's Encrypt)
+--------------------------------------------
+# REQUIREMENT: You must have a domain pointing to your server IP
+# (see 05-domain-setup.txt first if you don't have a domain)
+
+# Get certificate (replace with your actual domain)
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+
+# Follow prompts:
+#   Enter email: your@email.com
+#   Agree to terms: Y
+#   Share email with EFF: N (optional)
+#   Redirect HTTP to HTTPS: 2 (yes, redirect)
+
+# Certbot automatically updates your nginx config with SSL settings
+
+
+5. VERIFY SSL
+--------------
+# Test HTTPS
+curl https://yourdomain.com/health
+
+# Check certificate
+curl -I https://yourdomain.com
+
+# Should show: HTTP/2 200 and valid SSL headers
+
+
+6. AUTO-RENEW SSL
+------------------
+# Certbot installs a cron job automatically, but verify:
+sudo systemctl status certbot.timer
+
+# Test renewal (dry run — doesn't actually renew)
+sudo certbot renew --dry-run
+
+# Expected: "Congratulations, all simulated renewals succeeded"
+
+
+7. IF YOU DON'T HAVE A DOMAIN (use IP only)
+--------------------------------------------
+# Edit nginx config to use IP instead of domain
+sudo nano /etc/nginx/sites-available/pdfkit
+
+# Change:
+  server_name YOUR_PUBLIC_IP;
+
+# No SSL possible with just an IP (Let's Encrypt requires a domain)
+# Your API will be at: http://YOUR_PUBLIC_IP/health
+
+sudo nginx -t && sudo systemctl reload nginx
+
+
+8. FINAL NGINX CONFIG CHECK
+-----------------------------
+sudo nginx -t
+sudo systemctl status nginx
+
+# View nginx error log if something is wrong
+sudo tail -50 /var/log/nginx/error.log

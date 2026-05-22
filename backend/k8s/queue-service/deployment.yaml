@@ -1,0 +1,139 @@
+# =============================================================================
+# Queue Service Deployment
+#
+# Handles: BullMQ workers + Bull Board dashboard at /admin/queues
+# Workers: pdf, conversion, cleanup, organization, security, metadata, html
+# Depends on: Redis (BullMQ backend)
+#
+# Scaling note: Queue workers should scale carefully.
+# - More pods = more concurrent workers = more parallel jobs
+# - But LibreOffice/Ghostscript workers are CPU-heavy — don't over-scale
+# - Min 2 for HA, max 4 to avoid overwhelming downstream services
+#
+# Bull Board dashboard is accessible at /admin/queues on any pod.
+# For production, expose it via a separate Ingress with auth.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: queue-service
+    app.kubernetes.io/component: queue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: queue-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: queue-service
+        app.kubernetes.io/name: queue-service
+        app.kubernetes.io/component: queue
+    spec:
+      containers:
+        - name: queue-service
+          image: pdfkit/queue-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3006
+              name: http
+          envFrom:
+            - configMapRef:
+                name: pdfkit-config
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_SECRET_KEY
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3006
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3006
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]  # Allow workers to finish current job
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: queue-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: queue-service
+    app.kubernetes.io/component: queue
+spec:
+  selector:
+    app: queue-service
+  ports:
+    - port: 3006
+      targetPort: 3006
+      name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: queue-service-hpa
+  namespace: pdfkit
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: queue-service
+  minReplicas: 2
+  maxReplicas: 4   # Conservative — workers are CPU-heavy
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+    scaleDown:
+      stabilizationWindowSeconds: 600   # 10 min — don't kill workers mid-job
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 180

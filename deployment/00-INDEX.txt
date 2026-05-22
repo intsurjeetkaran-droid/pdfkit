@@ -1,0 +1,64 @@
+PDFKit — Oracle Cloud Always Free Deployment Guide
+===================================================
+Read files in this order for a complete deployment.
+
+  01-oracle-account-setup.txt     Create OCI account, provision ARM VM, open firewall
+  02-server-initial-setup.txt     SSH in, install Docker, Nginx, swap, iptables
+  03-project-deploy.txt           Clone repo, configure env, run docker-compose
+  04-nginx-ssl.txt                Nginx reverse proxy config + free SSL (Let's Encrypt)
+  05-domain-setup.txt             Point a domain to your server (free or paid options)
+  06-monitoring.txt               Live logs, health checks, Bull Board, disk alerts
+  07-managing.txt                 Start/stop, update code, backup MySQL, scale services
+  08-troubleshooting.txt          Common problems and exact fixes
+  09-oracle-cloud-console.txt     OCI console: metrics, alarms, snapshots, cost check
+  10-security-hardening.txt       Passwords, CORS, fail2ban, SSH hardening
+  11-performance-tuning.txt       Docker limits, MySQL tuning, Nginx gzip, log rotation
+  12-quick-reference.txt          All daily commands on one page
+
+
+ORACLE CLOUD ALWAYS FREE — What You Get Forever (No Charges)
+--------------------------------------------------------------
+  Compute:   4 OCPUs + 24 GB RAM  (ARM Ampere A1 Flex)
+             Can be split: 1x4OCPU/24GB  or  2x2OCPU/12GB  or  4x1OCPU/6GB
+  Storage:   200 GB block storage total (boot volumes + extra volumes)
+  Object:    10 GB OCI Object Storage
+  Network:   10 TB outbound data transfer per month
+  Load Bal:  1 flexible load balancer (10 Mbps bandwidth)
+  Database:  2 Autonomous Databases (20 GB each) — not used by PDFKit
+  Other:     Monitoring, logging, notifications — all free
+
+Recommended PDFKit setup (uses full free allocation):
+  1 VM: VM.Standard.A1.Flex — 4 OCPUs, 24 GB RAM, 100 GB boot volume
+  OS:   Ubuntu 22.04 (ARM64 / aarch64)
+
+This single VM comfortably runs all 12 PDFKit containers:
+  api-gateway, pdf-service, conversion-service, storage-service,
+  queue-service, organization-service, security-service,
+  metadata-service, html-service, mysql, redis, minio
+
+Estimated idle RAM usage: ~3-4 GB out of 24 GB
+Estimated capacity: ~100-200 concurrent users
+
+
+DEPLOYMENT CHECKLIST
+---------------------
+[ ] OCI account created, home region selected
+[ ] VM.Standard.A1.Flex provisioned (4 OCPU, 24 GB, 100 GB disk)
+[ ] OCI Security List: ports 80 and 443 open
+[ ] SSH key downloaded and working
+[ ] System updated, Docker installed, swap created
+[ ] iptables rules saved (ports 80, 443)
+[ ] Repo cloned to ~/PDFkit
+[ ] docker-compose.yml passwords changed from defaults
+[ ] TEST_MODE set to false
+[ ] docker-compose up --build -d — all containers healthy
+[ ] Prisma migration run on storage-service
+[ ] Nginx configured and running
+[ ] Domain DNS pointing to VM IP (or using raw IP)
+[ ] SSL certificate obtained (if using domain)
+[ ] ~/check-health.sh — all services return 200
+[ ] OCI metric alarm created for CPU > 85%
+[ ] Budget alert set to $1 (verify no charges)
+[ ] fail2ban installed
+[ ] Log rotation configured
+[ ] Systemd service enabled (auto-start on reboot)

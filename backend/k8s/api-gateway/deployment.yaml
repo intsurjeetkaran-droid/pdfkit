@@ -1,0 +1,99 @@
+# =============================================================================
+# API Gateway Deployment
+#
+# The single entry point for all client traffic.
+# Responsibilities:
+#   - Reverse proxy to all downstream microservices
+#   - Rate limiting (general, upload, heavy ops)
+#   - CORS enforcement
+#   - Request ID tracing (x-request-id header)
+#   - Latency logging per proxied request
+#
+# Scaling: 2–10 pods based on CPU. The gateway is stateless — no shared state
+# between pods (rate limiting uses in-memory store per pod; for distributed
+# rate limiting across pods, replace express-rate-limit with Redis-backed store).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 2   # HPA will adjust this between 2 and 10
+  selector:
+    matchLabels:
+      app: api-gateway
+  # Rolling update — zero downtime deploys
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Allow 1 extra pod during update
+      maxUnavailable: 0  # Never take pods offline during update
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        app.kubernetes.io/name: api-gateway
+        app.kubernetes.io/component: gateway
+    spec:
+      # Spread pods across nodes for availability
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: api-gateway
+      containers:
+        - name: api-gateway
+          image: pdfkit/api-gateway:latest   # Replace with your registry image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          # Load non-sensitive config from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: pdfkit-config
+          env:
+            # POD_NAME from Downward API — appears in every log entry for pod-level tracing
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          # Resource limits — gateway is lightweight (pure proxy)
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # Liveness: restart pod if it stops responding
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness: only route traffic when the pod is ready
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Graceful shutdown — allow in-flight requests to complete
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      # Graceful termination period — must be > preStop sleep
+      terminationGracePeriodSeconds: 30

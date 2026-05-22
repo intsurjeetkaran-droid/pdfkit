@@ -1,83 +1,132 @@
 # PDFKit Backend
 
-**Version:** 2.0.0 — Guest-First PDF Platform  
-**Status:** ✅ Production Ready — 287/287 Tests Passing  
-**Last Updated:** May 13, 2026
+**Version:** 3.1.0 — Kubernetes-Ready PDF Platform  
+**Status:** ✅ Production Ready — 9 Services + Kubernetes Manifests  
+**Last Updated:** May 22, 2026
 
 ---
 
 ## What Is PDFKit?
 
-A **guest-first PDF utility platform** — no signup, no login, no token required. Upload a file, process it, download the result. Files auto-delete after 1 hour. Inspired by iLovePDF, Smallpdf, and PDF24, built as a fully scalable microservice backend.
+A **guest-first PDF utility platform** — no signup, no login, no token required. Upload a file, process it, download the result. Files auto-delete after 1 hour. Inspired by iLovePDF, Smallpdf, and PDF24.
+
+Built as a fully scalable microservice backend with:
+- **Docker Compose** for local development
+- **Kubernetes** for production with auto-scaling (HPA) up to 1000+ concurrent users
+- **MinIO** for shared S3-compatible object storage (required for K8s horizontal scaling)
 
 ---
 
-## Quick Start
+## Quick Start (Docker Compose)
 
 ```bash
-# Start everything (fresh build)
 cd backend
+
+# Start everything including MinIO
 docker-compose up --build -d
 
 # Verify all services are healthy
-node tests/run.js --only 01
+docker-compose ps
 
-# Run full test suite
+# Run tests
 node tests/run.js
 ```
 
-**Services will be available at:**
+**Services available at:**
 
 | Service | URL |
 |---------|-----|
 | API Gateway | http://localhost:3000 |
+| MinIO Console | http://localhost:9001 (minioadmin / minioadmin) |
 | Bull Board (queue dashboard) | http://localhost:3006/admin/queues |
+
+---
+
+## Quick Start (Kubernetes)
+
+```bash
+# Prerequisites:
+# 1. kubectl configured and pointing to your cluster
+# 2. Docker images built and pushed to your registry
+# 3. Update image: fields in k8s/*/deployment.yaml with your registry path
+# 4. Update k8s/secrets.yaml with real base64-encoded credentials
+
+# Install Metrics Server (required for HPA)
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Install Nginx Ingress Controller
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace
+
+# Deploy everything
+cd backend/k8s
+chmod +x deploy.sh
+./deploy.sh
+
+# Watch pods scale
+kubectl get hpa -n pdfkit -w
+
+# Check all pods
+kubectl get pods -n pdfkit
+```
 
 ---
 
 ## Architecture
 
+### Docker Compose (Local Dev)
+
 ```
                     ┌─────────────────────────────────────────┐
                     │           API Gateway :3000              │
                     │   Pure proxy · Rate limiting · CORS      │
-                    │   Request tracing · Timing logs          │
                     └──────────────┬──────────────────────────┘
                                    │
-     ┌─────────────────────────────┼──────────────────────────────┐
-     │                             │                              │
-     ▼                             ▼                              ▼
-┌───────────────┐       ┌─────────────────┐           ┌────────────────┐
-│  PDF Service  │       │Conversion Service│           │Storage Service │
-│    :3001      │       │     :3002        │           │    :3003       │
-│ merge/split   │       │ office→pdf       │           │ upload-temp    │
-│ rotate/extract│       │ pdf→image        │           │ download       │
-│ delete/reorder│       │ image→pdf        │           │ TTL cleanup    │
-│ watermark     │       │ compress         │           └────────────────┘
-└───────────────┘       │ pdf→word         │
-                        └─────────────────┘
-     ┌─────────────────────────────┬──────────────────────────────┐
-     │                             │                              │
-     ▼                             ▼                              ▼
-┌───────────────┐       ┌─────────────────┐           ┌────────────────┐
-│ Queue Service │       │Organization Svc │           │Security Service│
-│    :3006      │       │    :3007        │           │    :3008       │
-│ BullMQ workers│       │ reorder pages   │           │ protect (qpdf) │
-│ 7 queues      │       │ duplicate pages │           │ unlock (qpdf)  │
-│ Bull Board UI │       │ remove pages    │           │ remove-metadata│
-└───────────────┘       └─────────────────┘           └────────────────┘
-                                                       ┌────────────────┐
-                                                       │Metadata Service│
-                                                       │    :3009       │
-                                                       │ info (pdf-lib) │
-                                                       │ page-count     │
-                                                       │ preview (ppm)  │
-                                                       └────────────────┘
+     ┌─────────┬─────────┬─────────┼─────────┬─────────┬─────────┬─────────┐
+     ▼         ▼         ▼         ▼         ▼         ▼         ▼         ▼
+  :3001     :3002     :3003     :3006     :3007     :3008     :3009     :3010
+  PDF      Convert  Storage   Queue     Org     Security  Meta      HTML
+  Svc       Svc      Svc      Svc      Svc      Svc      Svc       Svc
 
 Infrastructure:
-  MySQL 8  :3307  ─── File + Job tables (no User table — guest-first)
+  MySQL 8  :3307  ─── File + Job metadata (storage-service only)
   Redis 7  :6380  ─── BullMQ queues + rate limit store
+  MinIO    :9000  ─── Shared object storage (ALL services read/write here)
 ```
+
+### Kubernetes (Production)
+
+```
+Internet
+   │
+   ▼
+[Nginx Ingress]  ← TLS termination, rate limiting, 100MB body limit
+   │
+   ▼
+[api-gateway  2–10 pods]  ← HPA scales on CPU > 70%
+   │
+   ├──► [pdf-service       2–10 pods]  HPA CPU > 70%
+   ├──► [conversion-service 2–8 pods]  HPA CPU > 65% (LibreOffice heavy)
+   ├──► [html-service       2–6 pods]  HPA CPU > 65% (Chromium heavy)
+   ├──► [storage-service    2–8 pods]  HPA CPU > 70%
+   ├──► [queue-service      2–4 pods]  HPA CPU > 70%
+   ├──► [organization-service 2–8 pods] HPA CPU > 70%
+   ├──► [security-service   2–8 pods]  HPA CPU > 70%
+   └──► [metadata-service   2–8 pods]  HPA CPU > 70%
+
+Infrastructure (StatefulSets):
+   MySQL  ─── File metadata (storage-service)
+   Redis  ─── BullMQ + rate limiting
+   MinIO  ─── Shared object storage (ALL pods read/write — enables horizontal scaling)
+```
+
+---
+
+## Why MinIO?
+
+In Docker Compose (single host), each service writes files to local disk. In Kubernetes, pods run on different nodes — Pod A might write a file but Pod B handles the download and can't find it.
+
+**MinIO solves this**: all pods across all services read/write from the same MinIO buckets (`pdfkit-uploads`, `pdfkit-outputs`), regardless of which node they run on. This is the key change that enables horizontal scaling.
 
 ---
 
@@ -103,6 +152,9 @@ POST /api/convert/pdf-to-image   — PDF → PNG/JPG (poppler-utils)
 POST /api/convert/image-to-pdf   — PNG/JPEG/WebP → PDF (sharp)
 POST /api/convert/compress       — Compress PDF (Ghostscript)
 POST /api/convert/pdf-to-word    — PDF → DOCX (LibreOffice)
+POST /api/convert/pdf-to-text    — PDF → TXT (pdftotext)
+POST /api/convert/svg-to-pdf     — SVG → PDF (sharp + pdf-lib)
+POST /api/convert/images-to-pdf  — Multiple images → PDF
 ```
 
 ### Storage Service
@@ -133,68 +185,28 @@ GET  /admin/queues                      — Bull Board dashboard
 
 ### Security Service
 ```
-POST /api/security/protect        — Add AES-256 password (qpdf)
-POST /api/security/unlock         — Remove password (qpdf)
-POST /api/security/remove-metadata — Strip title/author/dates/XMP (pdf-lib)
+POST /api/security/protect          — Add AES-256 password (qpdf)
+POST /api/security/unlock           — Remove password (qpdf)
+POST /api/security/remove-metadata  — Strip title/author/dates/XMP (pdf-lib)
 ```
 
 ### Metadata Service
 ```
-POST /api/meta/info               — Full metadata: pages, dimensions, version, dates
-POST /api/meta/page-count         — Fast page count only
-POST /api/meta/preview            — PNG thumbnail of any page (pdftoppm)
+POST /api/meta/info        — Full metadata: pages, dimensions, version, dates
+POST /api/meta/page-count  — Fast page count only
+POST /api/meta/preview     — PNG thumbnail of any page (pdftoppm)
+```
+
+### HTML Service
+```
+POST /api/html/html-to-pdf     — HTML file → PDF (Chromium)
+POST /api/html/url-to-pdf      — URL → PDF (Chromium)
+POST /api/html/string-to-pdf   — HTML string → PDF (Chromium)
 ```
 
 ### Health Checks
 ```
-GET /health   — All services expose this
-```
-
----
-
-## curl Examples
-
-```bash
-# Upload a file
-curl -X POST http://localhost:3000/api/storage/upload-temp \
-  -F "file=@document.pdf"
-
-# Merge PDFs
-curl -X POST http://localhost:3000/api/pdf/merge \
-  -F "files=@file1.pdf" -F "files=@file2.pdf" \
-  -o merged.pdf
-
-# Add watermark
-curl -X POST http://localhost:3000/api/pdf/watermark \
-  -F "file=@document.pdf" \
-  -F "text=CONFIDENTIAL" \
-  -F "opacity=0.3" \
-  -F "rotation=45" \
-  -o watermarked.pdf
-
-# Reorder pages (page 3 first, then 1, then 2)
-curl -X POST http://localhost:3000/api/pdf/reorder \
-  -F "file=@document.pdf" \
-  -F "order=[3,1,2]" \
-  -o reordered.pdf
-
-# Compress PDF
-curl -X POST http://localhost:3000/api/convert/compress \
-  -F "file=@large.pdf" \
-  -F "quality=ebook" \
-  -o compressed.pdf
-
-# Convert PDF to Word
-curl -X POST http://localhost:3000/api/convert/pdf-to-word \
-  -F "file=@document.pdf" \
-  -o converted.docx
-
-# Rotate all pages 90°
-curl -X POST http://localhost:3000/api/pdf/rotate \
-  -F "file=@document.pdf" \
-  -F "pages=[]" \
-  -F "angle=90" \
-  -o rotated.pdf
+GET /health   — All services expose this endpoint
 ```
 
 ---
@@ -204,26 +216,48 @@ curl -X POST http://localhost:3000/api/pdf/rotate \
 ```
 backend/
 ├── api-gateway/              # :3000 — single entry point, pure proxy
-├── pdf-service/              # :3001 — all PDF manipulation
-├── conversion-service/       # :3002 — format conversions
-├── storage-service/          # :3003 — guest file storage + TTL
-├── queue-service/            # :3006 — BullMQ + Bull Board
-├── organization-service/     # :3007 — page organization
-├── shared/                   # shared types, constants, timer utility
-├── tests/                    # complete test suite (287 tests)
-│   ├── helpers.js            # HTTP helpers, file factories
-│   ├── run.js                # test runner
-│   ├── 01-infrastructure.test.js
-│   ├── 02-storage.test.js
-│   ├── 03-pdf.test.js
-│   ├── 04-conversion.test.js
-│   ├── 05-organization.test.js
-│   ├── 06-queue.test.js
-│   └── 07-edge-cases.test.js
+├── pdf-service/              # :3001 — all PDF manipulation (pdf-lib)
+├── conversion-service/       # :3002 — format conversions (LibreOffice, Ghostscript)
+├── storage-service/          # :3003 — guest file storage + TTL (MySQL + MinIO)
+├── queue-service/            # :3006 — BullMQ workers + Bull Board
+├── organization-service/     # :3007 — page organization (pdf-lib)
+├── security-service/         # :3008 — protect/unlock/strip-metadata (qpdf)
+├── metadata-service/         # :3009 — info/page-count/preview (pdf-lib + pdftoppm)
+├── html-service/             # :3010 — html/url/string → pdf (Chromium)
+├── shared/
+│   ├── constants/            # MIME types, queue names, HTTP codes
+│   ├── logger/               # Global logger factory (createLogger)
+│   ├── middleware/           # Error handler, async wrapper, validation
+│   ├── types/                # TypeScript interfaces (ApiResponse, FileMetadata, etc.)
+│   └── utils/
+│       ├── minioClient.ts    # ← NEW: Shared MinIO client for all services
+│       ├── timer.ts          # Per-step timing utility
+│       ├── asyncHandler.ts   # Express async wrapper
+│       └── fileUtils.ts      # File helpers
+├── k8s/                      # ← NEW: Kubernetes manifests
+│   ├── namespace.yaml
+│   ├── configmap.yaml
+│   ├── secrets.yaml
+│   ├── ingress.yaml
+│   ├── deploy.sh             # One-command deployment script
+│   ├── infrastructure/
+│   │   ├── mysql-statefulset.yaml
+│   │   ├── mysql-pvc.yaml
+│   │   ├── redis-statefulset.yaml
+│   │   └── minio-deployment.yaml
+│   ├── api-gateway/          # deployment.yaml + service.yaml + hpa.yaml
+│   ├── pdf-service/          # deployment.yaml + hpa.yaml
+│   ├── conversion-service/   # deployment.yaml + hpa.yaml
+│   ├── storage-service/      # deployment.yaml (includes service + hpa)
+│   ├── queue-service/        # deployment.yaml (includes service + hpa)
+│   ├── organization-service/ # deployment.yaml (includes service + hpa)
+│   ├── security-service/     # deployment.yaml (includes service + hpa)
+│   ├── metadata-service/     # deployment.yaml (includes service + hpa)
+│   └── html-service/         # deployment.yaml (includes service + hpa)
+├── tests/                    # complete test suite
 ├── docs/                     # full documentation
-├── docker-compose.yml
-├── .env
-└── progress.txt
+├── docker-compose.yml        # Local dev (includes MinIO)
+└── .env
 ```
 
 ---
@@ -238,11 +272,32 @@ backend/
 | Image processing | sharp 0.33 |
 | Office conversion | LibreOffice (headless) |
 | PDF compression | Ghostscript |
-| PDF → Image | pdftoppm (poppler-utils) |
+| PDF → Image / Text | pdftoppm, pdftotext (poppler-utils) |
+| HTML → PDF | Puppeteer-core + Chromium |
+| PDF security | qpdf |
 | Queue | BullMQ 5 + Redis 7 |
 | Database | MySQL 8 + Prisma 5.8 |
-| Logging | Winston 3.11 (per-step timing) |
+| Object Storage | MinIO (S3-compatible) |
+| Logging | Winston 3.11 (per-step timing, pod-aware) |
 | Containers | Docker + Docker Compose |
+| Orchestration | Kubernetes + HPA (auto-scaling) |
+| Ingress | Nginx Ingress Controller |
+
+---
+
+## Kubernetes HPA Scaling Table
+
+| Service | Min Pods | Max Pods | CPU Threshold | Notes |
+|---------|----------|----------|---------------|-------|
+| api-gateway | 2 | 10 | 70% | Lightweight proxy |
+| pdf-service | 2 | 10 | 70% | pdf-lib in-process |
+| conversion-service | 2 | 8 | 65% | LibreOffice/Ghostscript heavy |
+| html-service | 2 | 6 | 65% | Chromium very heavy |
+| storage-service | 2 | 8 | 70% | I/O bound |
+| queue-service | 2 | 4 | 70% | Conservative — workers are heavy |
+| organization-service | 2 | 8 | 70% | pdf-lib in-process |
+| security-service | 2 | 8 | 70% | qpdf + pdf-lib |
+| metadata-service | 2 | 8 | 70% | pdf-lib + pdftoppm |
 
 ---
 
@@ -252,45 +307,10 @@ backend/
 |-------|-------|
 | General | 100 req / 15 min / IP |
 | Upload / PDF ops | 100 req / 15 min / IP |
-| Heavy ops (compress, pdf-to-word) | 20 req / hour / IP |
+| Heavy ops (compress, pdf-to-word, html) | 20 req / hour / IP |
 | Max upload size | 100 MB |
 | File TTL | 1 hour |
-
----
-
-## Testing
-
-```bash
-# All 342 tests
-node tests/run.js
-
-# Individual suites
-node tests/run.js --only 01   # Infrastructure & health
-node tests/run.js --only 02   # Storage service
-node tests/run.js --only 03   # PDF service
-node tests/run.js --only 04   # Conversion service
-node tests/run.js --only 05   # Organization service
-node tests/run.js --only 06   # Queue service
-node tests/run.js --only 07   # Edge cases & security
-node tests/run.js --only 08   # Security service
-node tests/run.js --only 09   # Metadata service
-
-# Skip infra checks (faster)
-node tests/run.js --skip 01
-```
-
----
-
-## Documentation
-
-Full docs in [`docs/`](./docs/):
-
-- [Getting Started](./docs/GETTING_STARTED.md)
-- [API Reference](./docs/API-REFERENCE.md) — every endpoint
-- [Frontend Integration](./docs/FRONTEND-INTEGRATION.md) — JS/React/Vue examples
-- [Workflows Guide](./docs/WORKFLOWS.md) — common use cases
-- [Error Handling](./docs/ERROR-HANDLING.md) — all error codes
-- [Project Overview](./docs/01-PROJECT-OVERVIEW.md)
+| Nginx Ingress | 100 req/s per IP |
 
 ---
 
@@ -302,10 +322,7 @@ See [`.env`](./.env) for all configuration. Key variables:
 # Service ports
 API_GATEWAY_PORT=3000
 PDF_SERVICE_PORT=3001
-CONVERSION_SERVICE_PORT=3002
-STORAGE_SERVICE_PORT=3003
-QUEUE_SERVICE_PORT=3006
-ORGANIZATION_SERVICE_PORT=3007
+...
 
 # Database
 DATABASE_URL=mysql://root:root@localhost:3307/pdfkit
@@ -314,12 +331,45 @@ DATABASE_URL=mysql://root:root@localhost:3307/pdfkit
 REDIS_HOST=localhost
 REDIS_PORT=6380
 
+# MinIO (shared object storage)
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET_UPLOADS=pdfkit-uploads
+MINIO_BUCKET_OUTPUTS=pdfkit-outputs
+
 # File storage
 FILE_TTL_MS=3600000          # 1 hour
-CLEANUP_INTERVAL_MS=3600000  # cleanup every hour
-STORAGE_BASE_URL=http://localhost:3000  # public download URL base
+CLEANUP_INTERVAL_MS=3600000
 
 # Logging
 LOG_LEVEL=info
 TEST_MODE=true               # raises rate limits for testing
 ```
+
+---
+
+## Logging
+
+Every service uses Winston with:
+- **service**: service name (e.g. "pdf-service")
+- **pod**: hostname / K8s pod name (set `POD_NAME` env via Downward API)
+- **timestamp**: ISO 8601 with milliseconds
+- **Per-step timing**: every operation logs `▶ started`, step timings, `✔ done`
+
+In Kubernetes, stdout JSON logs are collected by your log aggregator (Loki, CloudWatch, Datadog, etc.).
+
+---
+
+## Documentation
+
+Full docs in [`docs/`](./docs/):
+
+- [Getting Started](./docs/GETTING_STARTED.md)
+- [API Reference](./docs/API-REFERENCE.md)
+- [Kubernetes Guide](./docs/KUBERNETES.md) ← NEW
+- [Frontend Integration](./docs/FRONTEND-INTEGRATION.md)
+- [Workflows Guide](./docs/WORKFLOWS.md)
+- [Error Handling](./docs/ERROR-HANDLING.md)
+- [Project Overview](./docs/01-PROJECT-OVERVIEW.md)

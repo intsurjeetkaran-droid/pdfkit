@@ -1,0 +1,89 @@
+STEP 1 — Oracle Cloud Account + VM Setup
+=========================================
+
+1. CREATE ACCOUNT
+-----------------
+Go to: https://www.oracle.com/cloud/free/
+Click "Start for free"
+Fill in: name, email, country, password
+Verify email → verify phone (SMS)
+Add credit card (required for identity — you will NOT be charged)
+Choose Home Region carefully — pick closest to your users
+  (you CANNOT change home region later)
+  Recommended: ap-mumbai-1, us-ashburn-1, eu-frankfurt-1
+
+Wait for account activation (5-30 minutes)
+
+
+2. CREATE THE VM
+----------------
+Login to: https://cloud.oracle.com
+
+Navigate: Compute → Instances → Create Instance
+
+  Name: pdfkit-server
+
+  Image: Click "Change Image"
+    → Platform Images → Canonical Ubuntu → Ubuntu 22.04
+    → Make sure it says "aarch64" (ARM64)
+
+  Shape: Click "Change Shape"
+    → Ampere → VM.Standard.A1.Flex
+    → OCPUs: 4
+    → Memory: 24 GB
+    (This is the full Always Free allocation)
+
+  Networking:
+    → Create new VCN: pdfkit-vcn
+    → Create new subnet: pdfkit-subnet
+    → Assign public IPv4: YES (enable)
+
+  SSH Keys:
+    → Generate a key pair → Download both files
+    → Save pdfkit-server.key somewhere safe (you need this to SSH in)
+    → OR paste your existing public key
+
+  Boot Volume:
+    → Size: 100 GB  (Always Free gives 200 GB total)
+    → VPU: 10 (default)
+
+Click "Create"
+
+Wait 2-3 minutes for status to show "Running"
+
+Note your PUBLIC IP ADDRESS — shown on the instance details page
+You will use this for everything.
+
+
+3. OPEN FIREWALL PORTS IN OCI CONSOLE
+--------------------------------------
+This is the most important step — OCI blocks all ports by default.
+
+Navigate: Networking → Virtual Cloud Networks → pdfkit-vcn
+  → Subnets → pdfkit-subnet
+  → Security Lists → Default Security List
+
+Click "Add Ingress Rules" — add these one by one:
+
+  Rule 1 — HTTP
+    Source CIDR: 0.0.0.0/0
+    Protocol: TCP
+    Destination Port: 80
+
+  Rule 2 — HTTPS
+    Source CIDR: 0.0.0.0/0
+    Protocol: TCP
+    Destination Port: 443
+
+  Rule 3 — SSH (already exists, verify it's there)
+    Source CIDR: 0.0.0.0/0
+    Protocol: TCP
+    Destination Port: 22
+
+  Rule 4 — MinIO Console (optional, for debugging)
+    Source CIDR: YOUR_IP/32   (your home IP only — not 0.0.0.0/0)
+    Protocol: TCP
+    Destination Port: 9001
+
+NOTE: Do NOT expose ports 3000-3010 directly. All traffic goes
+through Nginx on port 80/443 only.

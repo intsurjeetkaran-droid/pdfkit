@@ -1,8 +1,8 @@
 # PDFKit — Project Overview
 
-**Version:** 3.0.0 — Guest-First PDF Platform  
-**Status:** ✅ Production Ready — 11 Services  
-**Last Updated:** May 16, 2026
+**Version:** 3.1.0 — Kubernetes-Ready PDF Platform  
+**Status:** ✅ Production Ready — 9 Services + Kubernetes Auto-Scaling  
+**Last Updated:** May 22, 2026
 
 ---
 
@@ -37,6 +37,12 @@ Svc     Svc     Svc      Svc    Svc     Svc      Svc           Svc
 Infrastructure:
   MySQL 8  :3307  ─── File + Job tables (no User table)
   Redis 7  :6380  ─── BullMQ queues + rate limit store
+  MinIO    :9000  ─── Shared object storage (all services — K8s scaling)
+
+Kubernetes (Production):
+  HPA auto-scales each service: 2 → 10 pods based on CPU
+  Nginx Ingress handles TLS + rate limiting at the edge
+  MinIO enables stateless pods — any pod can serve any request
 ```
 
 ---

@@ -1,0 +1,29 @@
+# =============================================================================
+# MySQL PersistentVolumeClaim
+#
+# Requests 10Gi of persistent storage for MySQL data.
+# The actual storage class depends on your cluster:
+#   - Local/minikube: "standard" or "hostpath"
+#   - AWS EKS:        "gp2" or "gp3"
+#   - GKE:            "standard" or "premium-rwo"
+#   - AKS:            "default" or "managed-premium"
+#
+# For production, consider using a managed database (RDS, Cloud SQL) instead
+# of running MySQL in Kubernetes — it simplifies backups and HA.
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+spec:
+  accessModes:
+    - ReadWriteOnce   # Single node read/write — sufficient for MySQL StatefulSet
+  resources:
+    requests:
+      storage: 10Gi
+  # Uncomment and set your storage class if "standard" doesn't exist in your cluster:
+  # storageClassName: gp2

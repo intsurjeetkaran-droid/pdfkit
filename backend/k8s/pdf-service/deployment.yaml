@@ -1,0 +1,108 @@
+# =============================================================================
+# PDF Service Deployment
+#
+# Handles: merge, split, rotate, extract, delete-pages, reorder, watermark
+# Tool: pdf-lib (pure Node.js — no external binaries)
+#
+# Scaling: 2–10 pods. Stateless — all file I/O goes through MinIO.
+# CPU threshold: 70% (pdf-lib operations are CPU-bound for large files)
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: pdf-service
+    app.kubernetes.io/component: pdf-processing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pdf-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: pdf-service
+        app.kubernetes.io/name: pdf-service
+        app.kubernetes.io/component: pdf-processing
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: pdf-service
+      containers:
+        - name: pdf-service
+          image: pdfkit/pdf-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+              name: http
+          envFrom:
+            - configMapRef:
+                name: pdfkit-config
+          env:
+            # MinIO credentials from Secret
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_SECRET_KEY
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"    # pdf-lib can spike CPU for large merges
+              memory: "1Gi"   # Large PDFs loaded into memory during processing
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pdf-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: pdf-service
+    app.kubernetes.io/component: pdf-processing
+spec:
+  selector:
+    app: pdf-service
+  ports:
+    - port: 3001
+      targetPort: 3001
+      name: http
+  type: ClusterIP

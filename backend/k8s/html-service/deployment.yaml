@@ -1,0 +1,164 @@
+# =============================================================================
+# HTML Service Deployment
+#
+# Handles: html-file→pdf, url→pdf, html-string→pdf
+# Tool: Puppeteer + Chromium (headless)
+#
+# ⚠️  HEAVY SERVICE: Chromium is the most resource-intensive service.
+#     Each Chromium instance uses 200–500MB RAM and significant CPU.
+#     The --single-process flag reduces memory but limits parallelism per pod.
+#
+# Security: Chromium requires --no-sandbox in containers.
+#           Consider running with a seccomp profile in production.
+#
+# Scaling: 2–6 pods. CPU threshold: 65% (Chromium spikes heavily)
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: html-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: html-service
+    app.kubernetes.io/component: html-conversion
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: html-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: html-service
+        app.kubernetes.io/name: html-service
+        app.kubernetes.io/component: html-conversion
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: html-service
+      containers:
+        - name: html-service
+          image: pdfkit/html-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3010
+              name: http
+          envFrom:
+            - configMapRef:
+                name: pdfkit-config
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_SECRET_KEY
+          # Chromium needs /dev/shm for shared memory — use emptyDir to avoid OOM
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+          # Highest resource limits — Chromium is the heaviest service
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"   # Chromium rendering can max out a core
+              memory: "3Gi"  # Chromium + page content can use 1-2GB
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3010
+            initialDelaySeconds: 30   # Chromium takes longer to initialize
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3010
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+      volumes:
+        # Chromium uses /dev/shm for shared memory — default 64MB is too small
+        # emptyDir with medium: Memory gives it proper shared memory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: html-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: html-service
+    app.kubernetes.io/component: html-conversion
+spec:
+  selector:
+    app: html-service
+  ports:
+    - port: 3010
+      targetPort: 3010
+      name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: html-service-hpa
+  namespace: pdfkit
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: html-service
+  minReplicas: 2
+  maxReplicas: 6   # Chromium is very heavy — cap lower than other services
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

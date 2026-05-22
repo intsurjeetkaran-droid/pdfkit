@@ -1,0 +1,144 @@
+STEP 11 — Performance Tuning for Oracle ARM
+============================================
+
+The A1 Flex ARM instance is powerful but needs tuning
+to handle concurrent PDF processing efficiently.
+
+
+1. DOCKER RESOURCE LIMITS
+--------------------------
+Add resource limits to docker-compose.yml to prevent
+one service from starving others.
+
+Edit ~/PDFkit/backend/docker-compose.yml and add
+deploy.resources to heavy services:
+
+  conversion-service:
+    ...
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  html-service:
+    ...
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  pdf-service:
+    ...
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  mysql:
+    ...
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+After editing: docker-compose up -d
+
+
+2. MYSQL PERFORMANCE TUNING
+-----------------------------
+# Create MySQL config file
+cat << 'EOF' > ~/PDFkit/backend/mysql.cnf
+[mysqld]
+# ARM-optimized settings for 24GB RAM
+innodb_buffer_pool_size = 512M
+innodb_log_file_size = 128M
+max_connections = 100
+query_cache_size = 0
+tmp_table_size = 64M
+max_heap_table_size = 64M
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 2
+EOF
+
+# Mount it in docker-compose.yml under mysql service:
+#   volumes:
+#     - mysql_data:/var/lib/mysql
+#     - ./mysql.cnf:/etc/mysql/conf.d/pdfkit.cnf
+
+docker-compose restart mysql
+
+
+3. NGINX PERFORMANCE
+---------------------
+sudo nano /etc/nginx/nginx.conf
+
+# Find and update:
+  worker_processes auto;          # uses all 4 ARM cores
+  worker_connections 1024;
+  keepalive_timeout 65;
+  gzip on;
+  gzip_types text/plain application/json application/javascript text/css;
+  gzip_min_length 1000;
+
+sudo nginx -t && sudo systemctl reload nginx
+
+
+4. CONCURRENT REQUEST HANDLING
+--------------------------------
+The 4 OCPU ARM instance can handle approximately:
+
+  Light ops (merge, split, rotate):    ~50-100 concurrent
+  Medium ops (compress, image-to-pdf): ~20-30 concurrent
+  Heavy ops (LibreOffice, Chromium):   ~5-10 concurrent
+
+For higher concurrency on heavy ops, the queue-service
+handles overflow — requests queue in Redis/BullMQ and
+process as capacity frees up.
+
+
+5. MONITOR AND TUNE
+--------------------
+# Watch which service is the bottleneck
+docker stats --no-stream
+
+# If conversion-service CPU is always 100%:
+#   → Reduce LibreOffice concurrency (it's already 1 at a time)
+#   → Consider splitting: one VM for conversions, one for PDF ops
+
+# If html-service memory is high:
+#   → Chromium leaks memory over time
+#   → Add scheduled restart:
+crontab -e
+# Add (restart html-service every 6 hours):
+0 */6 * * * cd /home/ubuntu/PDFkit/backend && docker-compose restart html-service
+
+
+6. LOG ROTATION
+----------------
+# Prevent log files from filling disk
+sudo nano /etc/logrotate.d/pdfkit
+
+# Paste:
+/home/ubuntu/PDFkit/backend/logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 ubuntu ubuntu
+}
+
+# Test rotation
+sudo logrotate -d /etc/logrotate.d/pdfkit

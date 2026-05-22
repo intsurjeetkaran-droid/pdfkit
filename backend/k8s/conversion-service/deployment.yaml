@@ -1,0 +1,117 @@
+# =============================================================================
+# Conversion Service Deployment
+#
+# Handles: office→pdf, pdf→image, image→pdf, compress, pdf→word, pdf→text,
+#          svg→pdf, images→pdf
+#
+# External tools (installed in Docker image):
+#   - LibreOffice (headless) — office→pdf, pdf→word
+#   - Ghostscript             — compress
+#   - pdftoppm (poppler)      — pdf→image
+#   - sharp (npm)             — image processing
+#
+# ⚠️  HEAVY SERVICE: LibreOffice and Ghostscript are CPU/memory intensive.
+#     Each LibreOffice process can use 200–500MB RAM.
+#     Resource limits are set higher than other services.
+#
+# Scaling: 2–8 pods. CPU threshold: 65% (lower than others due to heavy tools)
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: conversion-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: conversion-service
+    app.kubernetes.io/component: conversion
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: conversion-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: conversion-service
+        app.kubernetes.io/name: conversion-service
+        app.kubernetes.io/component: conversion
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: conversion-service
+      containers:
+        - name: conversion-service
+          image: pdfkit/conversion-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3002
+              name: http
+          envFrom:
+            - configMapRef:
+                name: pdfkit-config
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_SECRET_KEY
+          # Higher limits — LibreOffice is memory-hungry
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"   # 2 CPU cores for LibreOffice/Ghostscript
+              memory: "2Gi"  # LibreOffice can use 500MB+ per process
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]  # Extra time for LibreOffice to finish
+      terminationGracePeriodSeconds: 60   # LibreOffice jobs can take up to 30s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: conversion-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: conversion-service
+    app.kubernetes.io/component: conversion
+spec:
+  selector:
+    app: conversion-service
+  ports:
+    - port: 3002
+      targetPort: 3002
+      name: http
+  type: ClusterIP

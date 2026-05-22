@@ -1,0 +1,174 @@
+STEP 6 — Monitoring After Deployment
+======================================
+
+
+1. CHECK ALL CONTAINERS ARE HEALTHY
+-------------------------------------
+cd ~/PDFkit/backend
+
+# Quick status overview
+docker-compose ps
+
+# All containers should show "(healthy)" in STATUS column
+# If any show "(unhealthy)" or "Exit" — see 08-troubleshooting.txt
+
+
+2. WATCH LIVE LOGS
+-------------------
+# All services at once
+docker-compose logs -f
+
+# Single service
+docker-compose logs -f api-gateway
+docker-compose logs -f pdf-service
+docker-compose logs -f conversion-service
+docker-compose logs -f storage-service
+docker-compose logs -f html-service
+
+# Last 100 lines of a service
+docker-compose logs --tail=100 conversion-service
+
+# Filter for errors only
+docker-compose logs api-gateway 2>&1 | grep -i error
+
+
+3. MONITOR RESOURCE USAGE
+--------------------------
+# Live CPU + Memory per container
+docker stats
+
+# Press Ctrl+C to exit
+
+# System-wide resources
+htop
+# Press q to exit
+
+# Disk usage
+df -h
+du -sh ~/PDFkit/backend/logs/
+
+# Check if disk is getting full (important — PDFs can fill disk)
+df -h /
+
+
+4. HEALTH CHECK ALL ENDPOINTS
+-------------------------------
+# Run this script to check all services at once
+cat << 'EOF' > ~/check-health.sh
+#!/bin/bash
+echo "=== PDFKit Health Check ==="
+services=(
+  "api-gateway:3000"
+  "pdf-service:3001"
+  "conversion-service:3002"
+  "storage-service:3003"
+  "queue-service:3006"
+  "organization-service:3007"
+  "security-service:3008"
+  "metadata-service:3009"
+  "html-service:3010"
+)
+for svc in "${services[@]}"; do
+  name="${svc%%:*}"
+  port="${svc##*:}"
+  status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:$port/health)
+  if [ "$status" = "200" ]; then
+    echo "  ✓ $name ($port) — OK"
+  else
+    echo "  ✗ $name ($port) — FAILED (HTTP $status)"
+  fi
+done
+echo "=== MinIO ==="
+minio=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live)
+echo "  MinIO API: HTTP $minio"
+EOF
+chmod +x ~/check-health.sh
+~/check-health.sh
+
+
+5. BULL BOARD — QUEUE DASHBOARD
+---------------------------------
+Access at: http://yourdomain.com/admin/queues
+(or http://YOUR_IP:3006/admin/queues if not using nginx)
+
+Shows:
+  - All 8 queues (pdf, conversion, compression, cleanup, etc.)
+  - Active jobs (currently processing)
+  - Waiting jobs (queued)
+  - Completed jobs (last 100)
+  - Failed jobs (last 200) — check these for errors
+
+
+6. MINIO CONSOLE
+-----------------
+Access at: http://YOUR_PUBLIC_IP:9001
+Login: pdfkit_admin / YOUR_MINIO_PASSWORD
+
+Shows:
+  - pdfkit-uploads bucket — temp uploaded files
+  - pdfkit-outputs bucket — processed output files
+  - Storage usage
+  - Object count
+
+NOTE: Only accessible if you opened port 9001 in OCI security list
+      with your home IP (see 01-oracle-account-setup.txt step 3)
+
+
+7. VIEW LOG FILES ON DISK
+--------------------------
+# Logs are written to ~/PDFkit/backend/logs/
+ls ~/PDFkit/backend/logs/
+
+# Files created:
+#   api-gateway-combined.log
+#   api-gateway-error.log
+#   pdf-service-combined.log
+#   pdf-service-error.log
+#   ... (one pair per service)
+
+# Watch error log in real time
+tail -f ~/PDFkit/backend/logs/api-gateway-error.log
+
+# Search for errors in last hour
+grep "error" ~/PDFkit/backend/logs/api-gateway-combined.log | tail -50
+
+
+8. SET UP AUTOMATIC HEALTH ALERT (email on failure)
+-----------------------------------------------------
+# Install mailutils for email alerts
+sudo apt install -y mailutils
+
+# Create alert script
+cat << 'EOF' > ~/alert-check.sh
+#!/bin/bash
+FAILED=()
+for port in 3000 3001 3002 3003 3006 3007 3008 3009 3010; do
+  status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:$port/health)
+  if [ "$status" != "200" ]; then
+    FAILED+=("port $port")
+  fi
+done
+if [ ${#FAILED[@]} -gt 0 ]; then
+  echo "PDFKit services DOWN: ${FAILED[*]}" | mail -s "PDFKit Alert" your@email.com
+fi
+EOF
+chmod +x ~/alert-check.sh
+
+# Run every 5 minutes via cron
+crontab -e
+# Add this line:
+*/5 * * * * /home/ubuntu/alert-check.sh
+
+
+9. DISK CLEANUP (run weekly)
+------------------------------
+# Docker cleans up unused images/containers
+docker system prune -f
+
+# Remove old log files (keep last 7 days)
+find ~/PDFkit/backend/logs/ -name "*.log" -mtime +7 -delete
+
+# Add to cron (runs every Sunday at 2am)
+crontab -e
+# Add:
+0 2 * * 0 docker system prune -f && find /home/ubuntu/PDFkit/backend/logs/ -name "*.log" -mtime +7 -delete

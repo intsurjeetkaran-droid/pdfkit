@@ -1,0 +1,46 @@
+# =============================================================================
+# Conversion Service HPA — scales 2 to 8 pods on CPU > 65%
+#
+# Lower CPU threshold (65%) because LibreOffice/Ghostscript are bursty —
+# they spike to 100% CPU briefly then drop. Scaling earlier prevents queuing.
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: conversion-service-hpa
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: conversion-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: conversion-service
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

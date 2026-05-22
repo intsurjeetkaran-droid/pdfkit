@@ -1,0 +1,147 @@
+STEP 3 — Deploy PDFKit
+=======================
+
+
+1. CLONE THE REPOSITORY
+------------------------
+cd ~
+git clone https://github.com/YOUR_USERNAME/PDFkit.git
+cd PDFkit/backend
+
+# If repo is private, use a personal access token:
+# git clone https://YOUR_TOKEN@github.com/YOUR_USERNAME/PDFkit.git
+
+
+2. CONFIGURE ENVIRONMENT
+-------------------------
+# Copy and edit the env file
+cp .env .env.production
+
+nano .env.production
+
+# Change these values:
+  NODE_ENV=production
+  LOG_LEVEL=info
+  TEST_MODE=false
+
+  # Keep MySQL/Redis as-is (internal Docker network)
+  DATABASE_URL=mysql://root:CHANGE_THIS_PASSWORD@mysql:3306/pdfkit
+
+  # MinIO — change the password
+  MINIO_ACCESS_KEY=pdfkit_admin
+  MINIO_SECRET_KEY=CHANGE_THIS_STRONG_PASSWORD_MIN_16_CHARS
+
+  # Your public domain or IP
+  STORAGE_BASE_URL=https://yourdomain.com
+  # If no domain yet: STORAGE_BASE_URL=http://YOUR_PUBLIC_IP
+
+Save: Ctrl+X → Y → Enter
+
+
+3. UPDATE DOCKER-COMPOSE FOR PRODUCTION
+-----------------------------------------
+# Edit docker-compose.yml to use production env and strong passwords
+nano docker-compose.yml
+
+# Find the mysql service and change:
+  MYSQL_ROOT_PASSWORD: CHANGE_THIS_PASSWORD
+
+# Find the minio service and change:
+  MINIO_ROOT_USER: pdfkit_admin
+  MINIO_ROOT_PASSWORD: CHANGE_THIS_STRONG_PASSWORD_MIN_16_CHARS
+
+# Find all services that have MINIO_ACCESS_KEY and update to match:
+  MINIO_ACCESS_KEY: pdfkit_admin
+  MINIO_SECRET_KEY: CHANGE_THIS_STRONG_PASSWORD_MIN_16_CHARS
+
+# Find api-gateway and set:
+  TEST_MODE: "false"
+  ALLOWED_ORIGINS: "https://yourdomain.com"
+
+Save: Ctrl+X → Y → Enter
+
+
+4. BUILD AND START ALL SERVICES
+---------------------------------
+# First build (takes 5-15 minutes on ARM — LibreOffice is large)
+docker-compose up --build -d
+
+# Watch build progress
+docker-compose logs -f
+
+# Wait until all containers show "healthy"
+docker-compose ps
+
+# Expected output — all STATUS should be "Up X minutes (healthy)":
+  pdfkit-minio          Up 2 minutes (healthy)
+  pdfkit-mysql          Up 2 minutes (healthy)
+  pdfkit-redis          Up 2 minutes (healthy)
+  pdfkit-api-gateway    Up 1 minute (healthy)
+  pdfkit-pdf-service    Up 1 minute (healthy)
+  pdfkit-conversion-service  Up 1 minute (healthy)
+  pdfkit-storage-service     Up 1 minute (healthy)
+  pdfkit-queue-service       Up 1 minute (healthy)
+  pdfkit-organization-service Up 1 minute (healthy)
+  pdfkit-security-service    Up 1 minute (healthy)
+  pdfkit-metadata-service    Up 1 minute (healthy)
+  pdfkit-html-service        Up 1 minute (healthy)
+
+
+5. RUN DATABASE MIGRATION
+--------------------------
+# Run Prisma migration for storage-service
+docker-compose exec storage-service npx prisma migrate deploy --schema=./prisma/schema.prisma
+
+# Expected: "All migrations have been successfully applied"
+
+
+6. VERIFY SERVICES ARE WORKING
+--------------------------------
+# Test API gateway health
+curl http://localhost:3000/health
+
+# Expected JSON response:
+# {"status":"ok","service":"api-gateway","timestamp":"...","uptime":"..."}
+
+# Test all service health endpoints
+curl http://localhost:3001/health   # pdf-service
+curl http://localhost:3002/health   # conversion-service
+curl http://localhost:3003/health   # storage-service
+curl http://localhost:3006/health   # queue-service
+curl http://localhost:3007/health   # organization-service
+curl http://localhost:3008/health   # security-service
+curl http://localhost:3009/health   # metadata-service
+curl http://localhost:3010/health   # html-service
+
+All should return: {"status":"ok","service":"...","timestamp":"..."}
+
+
+7. SET SERVICES TO AUTO-START ON REBOOT
+-----------------------------------------
+# Create a systemd service for docker-compose
+sudo nano /etc/systemd/system/pdfkit.service
+
+# Paste this content:
+[Unit]
+Description=PDFKit Docker Compose
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ubuntu/PDFkit/backend
+ExecStart=/usr/local/bin/docker-compose up -d
+ExecStop=/usr/local/bin/docker-compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+
+# Save and enable
+sudo systemctl daemon-reload
+sudo systemctl enable pdfkit.service
+
+# Test it
+sudo systemctl start pdfkit.service
+sudo systemctl status pdfkit.service

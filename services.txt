@@ -1,0 +1,501 @@
+PDFKit — Complete Platform Services Directory
+=============================================
+Version: 3.1.0  |  All services are guest-first (no login required)
+Base URL: https://yourdomain.com  (or http://YOUR_IP in dev)
+Max file size: 100 MB  |  File TTL: 1 hour auto-delete
+Rate limit: 100 req / 15 min / IP  (heavy ops: 20 req / hour)
+
+=============================================
+CATEGORY 1 — PDF MANIPULATION
+Service: pdf-service  |  Port: 3001
+Route prefix: /api/pdf
+Tool: pdf-lib (pure Node.js — no external binaries)
+=============================================
+
+  1. MERGE
+     POST /api/pdf/merge
+     Combine multiple PDFs into a single file.
+     Input:  field "files"  — 2 to 20 PDF files (multipart/form-data)
+     Output: merged PDF download
+     Notes:  Files merged in the order they are uploaded.
+             All source PDFs loaded in parallel for speed.
+
+  2. SPLIT
+     POST /api/pdf/split
+     Extract specific pages from a PDF into a new file.
+     Input:  field "file"   — PDF
+             field "pages"  — JSON array of page numbers e.g. [1,3,5]
+     Output: new PDF containing only the requested pages
+
+  3. ROTATE
+     POST /api/pdf/rotate
+     Rotate pages by 90, 180, or 270 degrees.
+     Input:  field "file"   — PDF
+             field "pages"  — JSON array e.g. [1,2] or [] for all pages
+             field "angle"  — 90 | 180 | 270
+     Output: PDF with rotated pages
+
+  4. EXTRACT
+     POST /api/pdf/extract
+     Extract a contiguous range of pages.
+     Input:  field "file"      — PDF
+             field "fromPage"  — start page (1-indexed)
+             field "toPage"    — end page (1-indexed, inclusive)
+     Output: PDF with pages fromPage through toPage
+
+  5. DELETE PAGES
+     POST /api/pdf/delete-pages
+     Remove specific pages from a PDF.
+     Input:  field "file"   — PDF
+             field "pages"  — JSON array of page numbers to remove e.g. [2,4]
+     Output: PDF with those pages removed
+     Notes:  Cannot delete all pages (at least 1 must remain).
+
+  6. REORDER
+     POST /api/pdf/reorder
+     Rearrange pages in a custom order.
+     Input:  field "file"   — PDF
+             field "order"  — JSON array defining new order e.g. [3,1,2]
+                              (page 3 becomes first, then page 1, then page 2)
+     Output: PDF with pages in the new order
+
+  7. WATERMARK
+     POST /api/pdf/watermark
+     Add a text or image watermark to pages.
+     Input:  field "file"            — PDF
+             field "watermarkImage"  — PNG or JPEG image (optional)
+             field "text"            — watermark text (optional, used if no image)
+             field "opacity"         — 0.0 to 1.0  (default: 0.3)
+             field "rotation"        — degrees      (default: 45)
+             field "pages"           — JSON array or [] for all pages
+             field "fontSize"        — number       (default: 48, text only)
+     Output: watermarked PDF
+     Notes:  Either "text" or "watermarkImage" is required, not both.
+
+
+=============================================
+CATEGORY 2 — FILE CONVERSION
+Service: conversion-service  |  Port: 3002
+Route prefix: /api/convert
+Tools: LibreOffice, Ghostscript, pdftoppm, pdftotext, sharp, pdf-lib
+=============================================
+
+  8. WORD TO PDF
+     POST /api/convert/word-to-pdf
+     Convert Word document to PDF.
+     Input:  field "file"  — DOCX or DOC
+     Output: PDF download
+     Tool:   LibreOffice headless
+     Time:   3–15 seconds
+
+  9. EXCEL TO PDF
+     POST /api/convert/excel-to-pdf
+     Convert Excel spreadsheet to PDF.
+     Input:  field "file"  — XLSX or XLS
+     Output: PDF download
+     Tool:   LibreOffice headless
+     Time:   3–15 seconds
+
+  10. POWERPOINT TO PDF
+      POST /api/convert/ppt-to-pdf
+      Convert PowerPoint presentation to PDF.
+      Input:  field "file"  — PPTX or PPT
+      Output: PDF download
+      Tool:   LibreOffice headless
+      Time:   3–15 seconds
+
+  11. PDF TO IMAGE
+      POST /api/convert/pdf-to-image
+      Convert each PDF page to an image file.
+      Input:  field "file"    — PDF
+              field "format"  — "png" | "jpg"  (default: png)
+              field "dpi"     — 72 to 300       (default: 150)
+      Output: ZIP file containing one image per page
+              Named: page-001.png, page-002.png, etc.
+      Tool:   pdftoppm (poppler-utils)
+      Time:   1–5 seconds per page
+
+  12. IMAGE TO PDF
+      POST /api/convert/image-to-pdf
+      Convert a single image to a PDF.
+      Input:  field "file"  — PNG, JPEG, WebP, TIFF, or BMP
+      Output: PDF download (page sized to image dimensions)
+      Tool:   sharp + pdf-lib
+      Time:   200–800 ms
+
+  13. COMPRESS PDF
+      POST /api/convert/compress
+      Reduce PDF file size using Ghostscript.
+      Input:  field "file"     — PDF
+              field "quality"  — "screen" | "ebook" | "printer" | "prepress"
+                                 screen   = smallest file, lowest quality (72 DPI)
+                                 ebook    = good balance (150 DPI)  ← default
+                                 printer  = high quality (300 DPI)
+                                 prepress = maximum quality (300 DPI + color preserve)
+      Output: compressed PDF download
+      Tool:   Ghostscript
+      Time:   2–30 seconds (depends on file size)
+      Rate:   Heavy limit — 20 req / hour / IP
+
+  14. PDF TO WORD
+      POST /api/convert/pdf-to-word
+      Convert PDF to editable Word document.
+      Input:  field "file"  — PDF
+      Output: DOCX download
+      Tool:   LibreOffice headless (writer_pdf_import filter)
+      Time:   5–30 seconds
+      Notes:  Text-layer PDFs convert well.
+              Scanned PDFs produce DOCX with embedded images (not editable text).
+      Rate:   Heavy limit — 20 req / hour / IP
+
+  15. PDF TO TEXT
+      POST /api/convert/pdf-to-text
+      Extract all text content from a PDF.
+      Input:  field "file"  — PDF
+      Output: TXT file download
+              Response JSON also includes: { text, pageCount }
+      Tool:   pdftotext (poppler-utils) with -layout flag
+      Time:   500ms – 3 seconds
+
+  16. SVG TO PDF
+      POST /api/convert/svg-to-pdf
+      Convert SVG vector graphic to PDF.
+      Input:  field "file"         — SVG
+              field "pageSize"     — "A4" | "Letter" | "auto"  (default: auto)
+              field "orientation"  — "portrait" | "landscape"   (default: portrait)
+      Output: PDF download (image centered and scaled to fit page)
+      Tool:   sharp (rasterize) + pdf-lib (embed)
+      Time:   300–800 ms
+
+  17. IMAGES TO PDF
+      POST /api/convert/images-to-pdf
+      Combine multiple images into a single multi-page PDF.
+      Input:  field "files"        — up to 50 images (PNG, JPEG, WebP, TIFF, BMP)
+              field "pageSize"     — "A4" | "Letter" | "auto"  (default: A4)
+              field "orientation"  — "portrait" | "landscape"   (default: portrait)
+              field "margin"       — pixels (default: 0)
+              field "fit"          — "contain" | "cover" | "stretch"  (default: contain)
+              field "order"        — JSON array to reorder images before combining
+      Output: PDF with one page per image
+      Tool:   sharp + pdf-lib
+      Time:   200ms per image
+
+
+=============================================
+CATEGORY 3 — PAGE ORGANIZATION
+Service: organization-service  |  Port: 3007
+Route prefix: /api/organize
+Tool: pdf-lib (pure Node.js)
+=============================================
+
+  18. REORDER PAGES
+      POST /api/organize/reorder
+      Rearrange pages in a custom order.
+      Input:  field "file"   — PDF
+              field "order"  — JSON array e.g. [3,1,2]
+      Output: PDF with pages in the new order
+
+  19. DUPLICATE PAGES
+      POST /api/organize/duplicate
+      Duplicate specific pages within the same PDF.
+      Input:  field "file"   — PDF
+              field "pages"  — JSON array of page numbers to duplicate e.g. [2,3]
+      Output: PDF with duplicated pages appended after the originals
+
+  20. REMOVE PAGES
+      POST /api/organize/remove
+      Remove specific pages from a PDF.
+      Input:  field "file"   — PDF
+              field "pages"  — JSON array of page numbers to remove e.g. [1,4]
+      Output: PDF with those pages removed
+
+
+=============================================
+CATEGORY 4 — PDF SECURITY
+Service: security-service  |  Port: 3008
+Route prefix: /api/security
+Tools: qpdf (protect/unlock), pdf-lib (remove-metadata)
+=============================================
+
+  21. PROTECT PDF (Add Password)
+      POST /api/security/protect
+      Add AES-256 password protection to a PDF.
+      Input:  field "file"           — PDF
+              field "userPassword"   — password to open the PDF (required)
+              field "ownerPassword"  — password to change permissions (optional,
+                                       defaults to userPassword if not provided)
+      Output: password-protected PDF download
+      Tool:   qpdf --encrypt --bits=256
+      Time:   500ms – 3 seconds
+
+  22. UNLOCK PDF (Remove Password)
+      POST /api/security/unlock
+      Remove password protection from a PDF.
+      Input:  field "file"      — password-protected PDF
+              field "password"  — current password (required)
+      Output: decrypted PDF download
+      Tool:   qpdf --decrypt
+      Time:   500ms – 3 seconds
+      Notes:  Returns 400 if password is wrong or PDF is not encrypted.
+
+  23. REMOVE METADATA
+      POST /api/security/remove-metadata
+      Strip all embedded metadata from a PDF for privacy.
+      Input:  field "file"  — PDF
+      Output: PDF with metadata removed
+      Removes: Title, Author, Subject, Keywords, Creator, Producer,
+               CreationDate, ModificationDate, XMP metadata stream
+      Tool:   pdf-lib (pure in-process — no external tools)
+      Time:   100ms – 1 second
+
+
+=============================================
+CATEGORY 5 — PDF METADATA & INSPECTION
+Service: metadata-service  |  Port: 3009
+Route prefix: /api/meta
+Tools: pdf-lib (info/page-count), pdftoppm (preview)
+=============================================
+
+  24. GET PDF INFO
+      POST /api/meta/info
+      Extract full metadata and document properties.
+      Input:  field "file"  — PDF
+      Output: JSON with:
+              pageCount, dimensions (width x height per page),
+              title, author, subject, keywords, creator, producer,
+              creationDate, modificationDate, pdfVersion,
+              isEncrypted, fileSize
+      Time:   100–500 ms
+
+  25. PAGE COUNT
+      POST /api/meta/page-count
+      Get the number of pages in a PDF (fast endpoint).
+      Input:  field "file"  — PDF
+      Output: { pageCount: number }
+      Time:   50–200 ms
+      Notes:  Use this before showing a reorder/split UI to know
+              how many pages to display.
+
+  26. PAGE PREVIEW
+      POST /api/meta/preview
+      Generate a PNG thumbnail of any page.
+      Input:  field "file"  — PDF
+              field "page"  — page number 1-indexed (default: 1)
+              field "dpi"   — 36 to 150 (default: 96)
+      Output: PNG image stream (inline, not attachment)
+      Tool:   pdftoppm (poppler-utils)
+      Time:   500ms – 2 seconds
+
+
+=============================================
+CATEGORY 6 — HTML TO PDF
+Service: html-service  |  Port: 3010
+Route prefix: /api/html
+Tool: Puppeteer + Chromium (headless browser)
+Rate: Heavy limit — 20 req / hour / IP
+=============================================
+
+  Common options for all HTML endpoints:
+    format          — "A4" | "A3" | "Letter" | "Legal" | "Tabloid"  (default: A4)
+    landscape       — true | false  (default: false)
+    printBackground — true | false  (default: true)
+    scale           — 0.1 to 2.0   (default: 1)
+    marginTop       — e.g. "20mm"  (default: 20mm)
+    marginRight     — e.g. "15mm"  (default: 15mm)
+    marginBottom    — e.g. "20mm"  (default: 20mm)
+    marginLeft      — e.g. "15mm"  (default: 15mm)
+    waitUntil       — "load" | "domcontentloaded" | "networkidle0" | "networkidle2"
+
+  27. HTML FILE TO PDF
+      POST /api/html/file-to-pdf
+      Convert an uploaded HTML file to PDF.
+      Input:  field "file"  — HTML file (multipart/form-data)
+              + any common options as form fields
+      Output: PDF download
+      Time:   1–5 seconds
+
+  28. URL TO PDF
+      POST /api/html/url-to-pdf
+      Navigate to a URL and render the page as PDF.
+      Input:  JSON body — { url: "https://example.com", ...options }
+      Output: PDF download
+      Time:   3–15 seconds (depends on page load time)
+      Notes:  Chromium navigates to the URL with a realistic viewport
+              and user-agent. Timeout: 30 seconds.
+
+  29. HTML STRING TO PDF
+      POST /api/html/string-to-pdf
+      Convert raw HTML content (string) to PDF.
+      Input:  JSON body — { html: "<h1>Hello</h1>...", ...options }
+      Output: PDF download
+      Time:   1–5 seconds
+      Notes:  Useful for server-side generated HTML (invoices, reports).
+
+
+=============================================
+CATEGORY 7 — FILE STORAGE
+Service: storage-service  |  Port: 3003
+Route prefix: /api/storage
+Database: MySQL (file metadata)  |  Storage: MinIO (file bytes)
+=============================================
+
+  30. UPLOAD TEMP FILE
+      POST /api/storage/upload-temp
+      Upload any file for temporary storage (1-hour TTL).
+      Input:  field "file"  — any supported file type (multipart/form-data)
+      Output: {
+                fileId:      "uuid",
+                originalName: "document.pdf",
+                mimeType:    "application/pdf",
+                size:        102400,
+                downloadUrl: "https://yourdomain.com/api/storage/temp/uuid/download",
+                expiresAt:   "2026-05-22T08:00:00.000Z"
+              }
+      Notes:  File auto-deletes after 1 hour.
+              No auth required — fully anonymous.
+
+  31. GET FILE INFO
+      GET /api/storage/temp/:id
+      Get metadata for an uploaded file.
+      Input:  URL param :id — fileId from upload response
+      Output: file metadata + downloadUrl + expiresAt
+
+  32. DOWNLOAD FILE
+      GET /api/storage/temp/:id/download
+      Stream download a stored file.
+      Input:  URL param :id — fileId
+      Output: file stream with Content-Disposition: attachment
+      Notes:  Returns 410 Gone if file has expired.
+
+  33. DELETE FILE
+      DELETE /api/storage/temp/:id
+      Manually delete a file before its TTL expires.
+      Input:  URL param :id — fileId
+      Output: { success: true, message: "File deleted" }
+
+  34. STORAGE STATS
+      GET /api/storage/stats
+      Get storage usage statistics.
+      Output: { totalFiles, tempFiles, totalSizeMB, diskUsage }
+
+  35. TRIGGER CLEANUP
+      POST /api/storage/cleanup
+      Manually trigger deletion of all expired files.
+      Output: { deletedCount: number }
+      Notes:  Cleanup also runs automatically every hour.
+
+
+=============================================
+CATEGORY 8 — JOB QUEUE
+Service: queue-service  |  Port: 3006
+Route prefix: /api/queue
+Backend: BullMQ + Redis 7
+Dashboard: /admin/queues  (Bull Board UI)
+=============================================
+
+  36. ADD JOB TO QUEUE
+      POST /api/queue/jobs
+      Add an async job to a processing queue.
+      Input:  JSON body — { queue, name, data }
+              queue: "pdf-jobs" | "conversion-jobs" | "compression-jobs" |
+                     "cleanup-jobs" | "organization-jobs" | "security-jobs" |
+                     "metadata-jobs"
+              name:  job type name (e.g. "merge-pdf", "word-to-pdf")
+              data:  job payload object
+      Output: { jobId, queue, name }
+
+  37. GET JOB STATUS
+      GET /api/queue/jobs/:queue/:id
+      Poll the status of a queued job.
+      Input:  URL params :queue and :id
+      Output: {
+                id, name, state, progress,
+                data, returnvalue, failedReason,
+                attemptsMade, createdAt, processedAt, finishedAt
+              }
+              state: "waiting" | "active" | "completed" | "failed" | "delayed"
+
+  38. QUEUE STATISTICS
+      GET /api/queue/stats
+      Get job counts for all queues.
+      Output: per-queue counts of waiting, active, completed, failed, delayed jobs
+
+  39. RETRY FAILED JOB
+      POST /api/queue/jobs/:queue/:id/retry
+      Re-queue a failed job for another attempt.
+      Input:  URL params :queue and :id
+      Notes:  Only works on jobs in "failed" state.
+              Jobs auto-retry 3 times with exponential backoff before failing.
+
+  BULL BOARD DASHBOARD
+      GET /admin/queues
+      Visual web UI showing all queues, jobs, and workers in real time.
+      Access: http://yourdomain.com/admin/queues
+      (IP-restricted in production — see nginx config)
+
+
+=============================================
+HEALTH CHECKS
+All services expose this endpoint
+=============================================
+
+  GET /health
+  Returns: { status: "ok", service: "service-name", timestamp: "...", uptime: "..." }
+
+  Endpoints:
+    GET http://yourdomain.com/health              — api-gateway
+    GET http://localhost:3001/health              — pdf-service
+    GET http://localhost:3002/health              — conversion-service
+    GET http://localhost:3003/health              — storage-service
+    GET http://localhost:3006/health              — queue-service
+    GET http://localhost:3007/health              — organization-service
+    GET http://localhost:3008/health              — security-service
+    GET http://localhost:3009/health              — metadata-service
+    GET http://localhost:3010/health              — html-service
+
+
+=============================================
+SUPPORTED FILE TYPES
+=============================================
+
+  PDF input:    .pdf
+  Word:         .docx  .doc
+  Excel:        .xlsx  .xls
+  PowerPoint:   .pptx  .ppt
+  Images:       .png  .jpg  .jpeg  .webp  .tiff  .bmp
+  Vector:       .svg
+  HTML:         .html
+  Max size:     100 MB per file
+
+
+=============================================
+RATE LIMITS
+=============================================
+
+  Standard ops:   100 requests / 15 minutes / IP
+  Heavy ops:       20 requests / hour / IP
+
+  Heavy ops are:
+    POST /api/convert/compress
+    POST /api/convert/pdf-to-word
+    POST /api/html/file-to-pdf
+    POST /api/html/url-to-pdf
+    POST /api/html/string-to-pdf
+
+  TEST_MODE=true raises all limits to 10,000 (dev/testing only)
+
+
+=============================================
+SUMMARY — 39 OPERATIONS ACROSS 8 SERVICES
+=============================================
+
+  Category 1  PDF Manipulation      7 ops   /api/pdf/*
+  Category 2  File Conversion      10 ops   /api/convert/*
+  Category 3  Page Organization     3 ops   /api/organize/*
+  Category 4  PDF Security          3 ops   /api/security/*
+  Category 5  Metadata & Inspect    3 ops   /api/meta/*
+  Category 6  HTML to PDF           3 ops   /api/html/*
+  Category 7  File Storage          6 ops   /api/storage/*
+  Category 8  Job Queue             4 ops   /api/queue/*
+                                   --------
+                              Total: 39 operations

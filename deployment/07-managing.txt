@@ -1,0 +1,153 @@
+STEP 7 — Managing the Deployment
+==================================
+
+All commands run from: ~/PDFkit/backend
+
+
+DAILY OPERATIONS
+-----------------
+
+# Check status
+docker-compose ps
+
+# Start all services
+docker-compose up -d
+
+# Stop all services (data is preserved)
+docker-compose down
+
+# Restart a single service (e.g. after config change)
+docker-compose restart api-gateway
+docker-compose restart pdf-service
+
+# Restart all services
+docker-compose restart
+
+# View logs of a service
+docker-compose logs -f pdf-service
+
+
+UPDATING THE CODE
+------------------
+
+# Pull latest code
+cd ~/PDFkit
+git pull origin main
+
+# Rebuild and restart (zero-downtime for unchanged services)
+cd backend
+docker-compose up --build -d
+
+# If only one service changed (faster):
+docker-compose up --build -d pdf-service
+
+# Verify after update
+docker-compose ps
+~/check-health.sh
+
+
+UPDATING ENVIRONMENT VARIABLES
+--------------------------------
+# Edit docker-compose.yml
+nano ~/PDFkit/backend/docker-compose.yml
+
+# After saving, restart affected service
+docker-compose up -d api-gateway
+
+# For .env changes (used by some services at startup)
+nano ~/PDFkit/backend/.env
+docker-compose restart
+
+
+SCALING SERVICES (manual — no Kubernetes needed)
+--------------------------------------------------
+# Run 2 instances of pdf-service for more throughput
+# NOTE: Works because all file I/O goes through MinIO
+docker-compose up -d --scale pdf-service=2
+
+# Scale conversion-service (heavy — be careful with RAM)
+docker-compose up -d --scale conversion-service=2
+
+# Check scaled containers
+docker-compose ps
+
+# NOTE: With Docker Compose scaling, you need a load balancer
+# in front of scaled services. For simple scaling, just use
+# a single powerful VM (4 OCPU, 24GB is plenty for ~200 users).
+
+
+BACKUP MYSQL DATABASE
+----------------------
+# Create backup
+docker-compose exec mysql mysqldump -u root -pYOUR_PASSWORD pdfkit > backup_$(date +%Y%m%d).sql
+
+# Restore from backup
+docker-compose exec -T mysql mysql -u root -pYOUR_PASSWORD pdfkit < backup_20260522.sql
+
+# Automate daily backup (cron)
+crontab -e
+# Add (runs at 3am daily, keeps last 7 days):
+0 3 * * * cd /home/ubuntu/PDFkit/backend && docker-compose exec -T mysql mysqldump -u root -pYOUR_PASSWORD pdfkit > /home/ubuntu/backups/db_$(date +\%Y\%m\%d).sql && find /home/ubuntu/backups/ -name "db_*.sql" -mtime +7 -delete
+
+# Create backup directory
+mkdir -p ~/backups
+
+
+BACKUP MINIO DATA
+------------------
+# MinIO data lives in Docker volume: backend_minio_data
+# Since files have 1-hour TTL, backup is less critical
+# But if you want to backup:
+
+# Find volume location
+docker volume inspect backend_minio_data
+
+# Copy volume data
+sudo cp -r /var/lib/docker/volumes/backend_minio_data/_data ~/backups/minio_$(date +%Y%m%d)
+
+
+HARD RESET (nuclear option — destroys all data)
+-------------------------------------------------
+# Stop everything
+docker-compose down
+
+# Remove all volumes (DELETES ALL DATA — MySQL, MinIO, Redis)
+docker-compose down -v
+
+# Remove all images (forces full rebuild)
+docker system prune -a
+
+# Start fresh
+docker-compose up --build -d
+
+
+CHECKING RESOURCE USAGE
+------------------------
+# See which container uses most CPU/RAM
+docker stats --no-stream
+
+# Typical usage at idle:
+#   conversion-service: ~200MB RAM (LibreOffice loaded)
+#   html-service:       ~300MB RAM (Chromium ready)
+#   mysql:              ~400MB RAM
+#   All others:         ~50-100MB RAM each
+#   Total idle:         ~2-3 GB RAM out of 24 GB
+
+
+USEFUL DOCKER COMMANDS
+-----------------------
+# Enter a running container (for debugging)
+docker-compose exec pdf-service sh
+docker-compose exec mysql bash
+
+# Check container logs with timestamps
+docker-compose logs -f --timestamps api-gateway
+
+# Inspect a container
+docker inspect pdfkit-api-gateway
+
+# List all volumes
+docker volume ls
+
+# Remove unused volumes (careful — check first)
+docker volume prune

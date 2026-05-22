@@ -1,0 +1,105 @@
+QUICK REFERENCE — Commands You'll Use Every Day
+=================================================
+
+SSH INTO SERVER
+  ssh -i pdfkit-server.key ubuntu@YOUR_PUBLIC_IP
+
+NAVIGATE TO PROJECT
+  cd ~/PDFkit/backend
+
+
+STATUS & HEALTH
+  docker-compose ps                          # all container status
+  ~/check-health.sh                          # all service health endpoints
+  docker stats --no-stream                   # CPU + RAM per container
+  df -h /                                    # disk usage
+
+
+LOGS
+  docker-compose logs -f                     # all services live
+  docker-compose logs -f pdf-service         # single service live
+  docker-compose logs --tail=50 api-gateway  # last 50 lines
+  tail -f logs/api-gateway-error.log         # error log file
+
+
+START / STOP
+  docker-compose up -d                       # start all
+  docker-compose down                        # stop all (data kept)
+  docker-compose restart api-gateway         # restart one service
+  docker-compose restart                     # restart all
+
+
+UPDATE CODE
+  git pull origin main
+  docker-compose up --build -d
+
+
+REBUILD ONE SERVICE
+  docker-compose up --build -d pdf-service
+
+
+ENTER A CONTAINER
+  docker-compose exec pdf-service sh
+  docker-compose exec mysql bash
+  docker-compose exec storage-service sh
+
+
+MYSQL
+  docker-compose exec mysql mysql -u root -pYOUR_PASSWORD pdfkit
+  docker-compose exec mysql mysqldump -u root -pYOUR_PASSWORD pdfkit > backup.sql
+
+
+NGINX
+  sudo nginx -t                              # test config
+  sudo systemctl reload nginx               # reload config
+  sudo systemctl status nginx               # check status
+  sudo tail -f /var/log/nginx/error.log     # nginx errors
+
+
+SSL
+  sudo certbot certificates                 # check expiry
+  sudo certbot renew                        # renew manually
+
+
+DISK CLEANUP
+  docker system prune -f                    # remove unused images/containers
+  find logs/ -name "*.log" -mtime +7 -delete  # delete old logs
+
+
+SERVICE URLS (internal — from VM only)
+  http://localhost:3000/health              # api-gateway
+  http://localhost:3001/health              # pdf-service
+  http://localhost:3002/health              # conversion-service
+  http://localhost:3003/health              # storage-service
+  http://localhost:3006/health              # queue-service
+  http://localhost:3006/admin/queues        # bull board dashboard
+  http://localhost:3007/health              # organization-service
+  http://localhost:3008/health              # security-service
+  http://localhost:3009/health              # metadata-service
+  http://localhost:3010/health              # html-service
+  http://localhost:9000/minio/health/live   # minio api
+  http://localhost:9001                     # minio console
+
+
+PUBLIC URLS (after nginx + domain setup)
+  https://yourdomain.com/health             # api gateway
+  https://yourdomain.com/api/pdf/merge      # pdf operations
+  https://yourdomain.com/api/convert/...    # conversions
+  https://yourdomain.com/api/storage/...    # file storage
+  https://yourdomain.com/admin/queues       # bull board (IP restricted)
+
+
+ORACLE CLOUD CONSOLE
+  https://cloud.oracle.com
+  Compute → Instances → pdfkit-server       # VM management
+  Networking → VCN → Security List          # firewall rules
+  Billing → Cost Analysis                   # verify $0 charges
+  Observability → Monitoring → Alarms       # metric alerts
+
+
+ALWAYS FREE LIMITS (never exceed these)
+  Compute:  4 OCPUs + 24 GB RAM total (A1 Flex)
+  Storage:  200 GB block storage total
+  Object:   10 GB object storage
+  Network:  10 TB outbound/month
+  LB:       1 flexible load balancer (10 Mbps)

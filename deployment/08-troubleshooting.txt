@@ -1,0 +1,210 @@
+STEP 8 — Troubleshooting
+=========================
+
+
+PROBLEM: Container shows "unhealthy" or keeps restarting
+----------------------------------------------------------
+# Check what's wrong
+docker-compose logs --tail=50 SERVICE_NAME
+
+# Common causes:
+#   - Port already in use
+#   - Missing env variable
+#   - MySQL not ready yet (storage-service starts before mysql)
+#   - Out of memory
+
+# Fix: restart just that service
+docker-compose restart SERVICE_NAME
+
+# If still failing, rebuild it
+docker-compose up --build -d SERVICE_NAME
+
+
+PROBLEM: Cannot connect to server (connection refused)
+-------------------------------------------------------
+# 1. Check OCI Security List has port 80/443 open
+#    Console → Networking → VCN → Subnet → Security List
+
+# 2. Check iptables on the VM
+sudo iptables -L INPUT --line-numbers
+# Should see ACCEPT rules for port 80 and 443
+
+# If missing, re-add them:
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+
+# 3. Check nginx is running
+sudo systemctl status nginx
+sudo nginx -t
+
+
+PROBLEM: 502 Bad Gateway from nginx
+-------------------------------------
+# Means nginx is running but api-gateway is down
+docker-compose ps | grep api-gateway
+docker-compose logs --tail=30 api-gateway
+
+# Restart api-gateway
+docker-compose restart api-gateway
+
+# Wait 15 seconds then test
+curl http://localhost:3000/health
+
+
+PROBLEM: Out of disk space
+---------------------------
+# Check disk usage
+df -h /
+
+# Find what's using space
+du -sh ~/PDFkit/backend/logs/*
+docker system df
+
+# Clean up
+docker system prune -f
+find ~/PDFkit/backend/logs/ -name "*.log" -mtime +3 -delete
+
+# If MinIO is full (shouldn't happen with 1hr TTL but just in case)
+# Access MinIO console at http://YOUR_IP:9001
+# Delete objects in pdfkit-uploads and pdfkit-outputs buckets
+
+
+PROBLEM: Out of memory (OOM — containers killed)
+-------------------------------------------------
+# Check if OOM killer fired
+sudo dmesg | grep -i "oom\|killed"
+
+# Check current memory
+free -h
+
+# Identify memory hogs
+docker stats --no-stream
+
+# html-service (Chromium) and conversion-service (LibreOffice)
+# are the biggest consumers. Restart them to free memory:
+docker-compose restart html-service
+docker-compose restart conversion-service
+
+# If swap is not set up:
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+
+PROBLEM: MySQL connection refused / storage-service unhealthy
+--------------------------------------------------------------
+# Check MySQL is running
+docker-compose ps mysql
+docker-compose logs --tail=30 mysql
+
+# MySQL takes ~30 seconds to initialize on first start
+# Wait and check again
+sleep 30
+docker-compose ps
+
+# If MySQL keeps failing, check disk space (MySQL needs space)
+df -h /
+
+# Restart MySQL
+docker-compose restart mysql
+sleep 30
+docker-compose restart storage-service
+
+
+PROBLEM: MinIO connection refused
+-----------------------------------
+docker-compose logs --tail=30 minio
+
+# Check MinIO health
+curl http://localhost:9000/minio/health/live
+
+# Restart MinIO
+docker-compose restart minio
+sleep 10
+# Restart all services that depend on MinIO
+docker-compose restart pdf-service conversion-service storage-service
+
+
+PROBLEM: SSL certificate expired or not working
+------------------------------------------------
+# Check certificate expiry
+sudo certbot certificates
+
+# Renew manually
+sudo certbot renew
+
+# If renewal fails (domain DNS changed):
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+
+# Check nginx after renewal
+sudo nginx -t && sudo systemctl reload nginx
+
+
+PROBLEM: git pull fails (merge conflicts after editing files)
+--------------------------------------------------------------
+# Stash your local changes
+git stash
+
+# Pull latest
+git pull origin main
+
+# Re-apply your changes
+git stash pop
+
+# If conflicts, manually resolve then:
+git add .
+git commit -m "merge local config"
+
+
+PROBLEM: docker-compose command not found after reboot
+-------------------------------------------------------
+# Check which version is installed
+which docker-compose
+which docker
+
+# If missing, reinstall
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+
+PROBLEM: Services not starting after VM reboot
+-----------------------------------------------
+# Check systemd service status
+sudo systemctl status pdfkit.service
+
+# If failed, start manually
+cd ~/PDFkit/backend
+docker-compose up -d
+
+# Re-enable auto-start
+sudo systemctl enable pdfkit.service
+sudo systemctl start pdfkit.service
+
+
+PROBLEM: Conversion service slow / LibreOffice hanging
+-------------------------------------------------------
+# LibreOffice sometimes hangs on corrupt files
+# Kill stuck LibreOffice processes inside the container
+docker-compose exec conversion-service pkill -f soffice
+
+# Or restart the service
+docker-compose restart conversion-service
+
+
+USEFUL DEBUG COMMANDS
+----------------------
+# See all running processes inside a container
+docker-compose exec pdf-service ps aux
+
+# Check container environment variables
+docker-compose exec api-gateway env | grep -v PASSWORD
+
+# Test internal service connectivity
+docker-compose exec api-gateway wget -qO- http://pdf-service:3001/health
+
+# Check Docker network
+docker network ls
+docker network inspect backend_pdfkit-network

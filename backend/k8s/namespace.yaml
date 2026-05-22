@@ -1,0 +1,14 @@
+# =============================================================================
+# PDFKit Kubernetes Namespace
+# Isolates all PDFKit resources from other workloads in the cluster.
+# All K8s objects (Deployments, Services, HPAs, etc.) must specify:
+#   namespace: pdfkit
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pdfkit
+  labels:
+    app.kubernetes.io/name: pdfkit
+    app.kubernetes.io/version: "3.0.0"
+    environment: production

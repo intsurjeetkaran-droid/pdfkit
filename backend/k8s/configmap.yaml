@@ -1,0 +1,75 @@
+# =============================================================================
+# PDFKit ConfigMap — Non-sensitive environment variables
+#
+# All service URLs use Kubernetes internal DNS:
+#   <service-name>.<namespace>.svc.cluster.local
+# Within the same namespace, short names work too: http://pdf-service:3001
+#
+# Sensitive values (passwords, keys) are in secrets.yaml — NOT here.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pdfkit-config
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: pdfkit
+    app.kubernetes.io/component: config
+data:
+  # ── Node environment ────────────────────────────────────────────────────────
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+
+  # ── Service ports ───────────────────────────────────────────────────────────
+  API_GATEWAY_PORT: "3000"
+  PDF_SERVICE_PORT: "3001"
+  CONVERSION_SERVICE_PORT: "3002"
+  STORAGE_SERVICE_PORT: "3003"
+  QUEUE_SERVICE_PORT: "3006"
+  ORGANIZATION_SERVICE_PORT: "3007"
+  SECURITY_SERVICE_PORT: "3008"
+  METADATA_SERVICE_PORT: "3009"
+  HTML_SERVICE_PORT: "3010"
+
+  # ── Internal service URLs (K8s DNS — ClusterIP services) ────────────────────
+  # These resolve to the ClusterIP Service for each microservice.
+  # The api-gateway uses these to proxy requests downstream.
+  PDF_SERVICE_URL: "http://pdf-service:3001"
+  CONVERSION_SERVICE_URL: "http://conversion-service:3002"
+  STORAGE_SERVICE_URL: "http://storage-service:3003"
+  QUEUE_SERVICE_URL: "http://queue-service:3006"
+  ORGANIZATION_SERVICE_URL: "http://organization-service:3007"
+  SECURITY_SERVICE_URL: "http://security-service:3008"
+  METADATA_SERVICE_URL: "http://metadata-service:3009"
+  HTML_SERVICE_URL: "http://html-service:3010"
+
+  # ── Redis (internal ClusterIP) ───────────────────────────────────────────────
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_URL: "redis://redis:6379"
+
+  # ── File storage settings ────────────────────────────────────────────────────
+  FILE_TTL_MS: "3600000"           # 1 hour TTL for temp files
+  CLEANUP_INTERVAL_MS: "3600000"   # Run cleanup every 1 hour
+  MAX_FILE_SIZE_MB: "100"
+
+  # ── MinIO (S3-compatible shared object storage) ──────────────────────────────
+  # All pods across all services read/write from the same MinIO bucket.
+  # This is the key change that enables horizontal scaling — no more local volumes.
+  MINIO_ENDPOINT: "minio"
+  MINIO_PORT: "9000"
+  MINIO_USE_SSL: "false"
+  MINIO_BUCKET_UPLOADS: "pdfkit-uploads"
+  MINIO_BUCKET_OUTPUTS: "pdfkit-outputs"
+
+  # ── API Gateway settings ─────────────────────────────────────────────────────
+  ALLOWED_ORIGINS: "*"
+  TEST_MODE: "false"
+
+  # ── HTML service (Chromium path in Docker image) ─────────────────────────────
+  PUPPETEER_EXECUTABLE_PATH: "/usr/bin/chromium"
+
+  # ── Storage service ──────────────────────────────────────────────────────────
+  # Public base URL used to construct download links returned to clients.
+  # In production, this should be your domain (e.g. https://api.pdfkit.io).
+  STORAGE_BASE_URL: "http://localhost:3000"

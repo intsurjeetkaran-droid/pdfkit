@@ -1,12 +1,45 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # PDFKit — Guest-First PDF Platform
 # Services: api-gateway, pdf-service, conversion-service, storage-service,
-#           queue-service, organization-service
-# Infrastructure: MySQL 8, Redis 7
-# Removed: auth-service, user-service (no auth required for PDF operations)
+#           queue-service, organization-service, security-service,
+#           metadata-service, html-service
+# Infrastructure: MySQL 8, Redis 7, MinIO (S3-compatible object storage)
+#
+# MinIO is added here to mirror the Kubernetes setup where shared object
+# storage is required for horizontal scaling. In Docker Compose (single host),
+# local volumes would also work, but using MinIO here keeps dev/prod parity.
+#
+# MinIO Console: http://localhost:9001  (admin/minioadmin)
+# MinIO API:     http://localhost:9000
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ── MinIO — S3-Compatible Object Storage ─────────────────────────────────────
+  # Shared file storage for all services.
+  # Required for Kubernetes horizontal scaling — replaces local volume mounts.
+  # All services read/write files through MinIO instead of local disk.
+  minio:
+    image: minio/minio:latest
+    container_name: pdfkit-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'   # S3 API
+      - '9001:9001'   # Web console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - pdfkit-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ── MySQL 8 ──────────────────────────────────────────────────────────────────
   mysql:
@@ -68,8 +101,15 @@ services:
       LOG_LEVEL: info
       TEST_MODE: "true"
       ALLOWED_ORIGINS: "*"
+      # MinIO connection (shared object storage)
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
     depends_on:
       - redis
+      - minio
     networks:
       - pdfkit-network
     healthcheck:
@@ -93,9 +133,16 @@ services:
       NODE_ENV: production
       PDF_SERVICE_PORT: 3001
       LOG_LEVEL: info
-    volumes:
-      - pdf_uploads:/app/src/uploads
-      - pdf_outputs:/app/outputs
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - pdfkit-network
     healthcheck:
@@ -121,9 +168,16 @@ services:
       NODE_ENV: production
       CONVERSION_SERVICE_PORT: 3002
       LOG_LEVEL: info
-    volumes:
-      - conversion_uploads:/app/src/uploads
-      - conversion_outputs:/app/outputs
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - pdfkit-network
     healthcheck:
@@ -135,6 +189,7 @@ services:
   # ── Storage Service — Port 3003 ───────────────────────────────────────────────
   # Guest upload-temp, download, delete, auto-cleanup (1-hour TTL)
   # No auth required — fully anonymous.
+  # File bytes stored in MinIO; metadata stored in MySQL via Prisma.
   storage-service:
     build:
       context: ./storage-service
@@ -151,12 +206,17 @@ services:
       CLEANUP_INTERVAL_MS: 3600000
       LOG_LEVEL: info
       STORAGE_BASE_URL: http://localhost:3000
-    volumes:
-      - storage_temp:/app/storage/temp
-      - storage_processed:/app/storage/processed
-      - storage_cache:/app/storage/cache
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
     depends_on:
       mysql:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - pdfkit-network
@@ -183,8 +243,17 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOG_LEVEL: info
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
     depends_on:
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - pdfkit-network
@@ -208,9 +277,16 @@ services:
       NODE_ENV: production
       ORGANIZATION_SERVICE_PORT: 3007
       LOG_LEVEL: info
-    volumes:
-      - organization_uploads:/app/src/uploads
-      - organization_outputs:/app/outputs
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - pdfkit-network
     healthcheck:
@@ -234,9 +310,16 @@ services:
       NODE_ENV: production
       SECURITY_SERVICE_PORT: 3008
       LOG_LEVEL: info
-    volumes:
-      - security_uploads:/app/src/uploads
-      - security_outputs:/app/outputs
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - pdfkit-network
     healthcheck:
@@ -260,9 +343,16 @@ services:
       NODE_ENV: production
       METADATA_SERVICE_PORT: 3009
       LOG_LEVEL: info
-    volumes:
-      - metadata_uploads:/app/src/uploads
-      - metadata_outputs:/app/outputs
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - pdfkit-network
     healthcheck:
@@ -287,9 +377,16 @@ services:
       HTML_SERVICE_PORT: 3010
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
       LOG_LEVEL: info
-    volumes:
-      - html_uploads:/app/src/uploads
-      - html_outputs:/app/outputs
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_UPLOADS: pdfkit-uploads
+      MINIO_BUCKET_OUTPUTS: pdfkit-outputs
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - pdfkit-network
     healthcheck:
@@ -301,24 +398,12 @@ services:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Named volumes — persisted across container restarts
+# Note: Per-service upload/output volumes removed — all file I/O now goes
+# through MinIO (minio_data volume). This mirrors the Kubernetes setup.
 # ─────────────────────────────────────────────────────────────────────────────
 volumes:
   mysql_data:
-  pdf_uploads:
-  pdf_outputs:
-  conversion_uploads:
-  conversion_outputs:
-  storage_temp:
-  storage_processed:
-  storage_cache:
-  organization_uploads:
-  organization_outputs:
-  security_uploads:
-  security_outputs:
-  metadata_uploads:
-  metadata_outputs:
-  html_uploads:
-  html_outputs:
+  minio_data:    # All uploaded and processed files stored here via MinIO
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal Docker network — services communicate by container name

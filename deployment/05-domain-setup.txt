@@ -1,0 +1,92 @@
+STEP 5 — Domain Setup (Optional but Recommended)
+==================================================
+
+A domain is required for HTTPS/SSL.
+Without it, your API only works over HTTP with the raw IP.
+
+
+OPTION A — FREE DOMAIN (no cost)
+----------------------------------
+Use Freenom (freenom.com) for .tk .ml .ga .cf .gq domains
+OR use DuckDNS (duckdns.org) for a free subdomain like:
+  yourapp.duckdns.org
+
+DuckDNS setup (easiest):
+  1. Go to https://www.duckdns.org
+  2. Login with Google/GitHub
+  3. Create subdomain: pdfkit → pdfkit.duckdns.org
+  4. Enter your Oracle VM public IP
+  5. Click "update ip"
+  6. Done — pdfkit.duckdns.org now points to your server
+
+
+OPTION B — PAID DOMAIN (recommended for production)
+-----------------------------------------------------
+Buy from: Namecheap, GoDaddy, Cloudflare, Google Domains
+Cost: ~$10-15/year for .com
+
+After buying, go to your registrar's DNS settings.
+
+
+DNS RECORDS TO CREATE
+----------------------
+In your domain registrar's DNS panel, add:
+
+  Type: A
+  Name: @  (or leave blank — means root domain)
+  Value: YOUR_ORACLE_VM_PUBLIC_IP
+  TTL: 300 (or Auto)
+
+  Type: A
+  Name: www
+  Value: YOUR_ORACLE_VM_PUBLIC_IP
+  TTL: 300
+
+  Type: A
+  Name: api   (optional — for api.yourdomain.com)
+  Value: YOUR_ORACLE_VM_PUBLIC_IP
+  TTL: 300
+
+
+USING CLOUDFLARE (recommended — free CDN + DDoS protection)
+-------------------------------------------------------------
+1. Sign up at cloudflare.com (free plan)
+2. Add your domain
+3. Change nameservers at your registrar to Cloudflare's
+4. In Cloudflare DNS, add the A records above
+5. Set Proxy status: DNS only (grey cloud) initially
+   → Switch to Proxied (orange cloud) after SSL is working
+
+Cloudflare benefits for PDFKit:
+  - Free DDoS protection
+  - Free CDN (caches static assets)
+  - Hides your real server IP
+  - Free SSL (even without certbot)
+  - Analytics on traffic
+
+
+VERIFY DNS PROPAGATION
+-----------------------
+# Check if DNS has propagated (can take 5-60 minutes)
+nslookup yourdomain.com
+# or
+dig yourdomain.com
+
+# Should return your Oracle VM IP
+
+# Online tool: https://dnschecker.org
+# Enter your domain and check from multiple locations
+
+
+AFTER DNS IS WORKING
+---------------------
+Go back to 04-nginx-ssl.txt and run certbot to get SSL.
+
+# Update nginx config with your domain
+sudo nano /etc/nginx/sites-available/pdfkit
+# Change server_name to: yourdomain.com www.yourdomain.com
+
+sudo nginx -t && sudo systemctl reload nginx
+
+# Then get SSL
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com

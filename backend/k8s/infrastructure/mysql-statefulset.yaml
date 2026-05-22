@@ -1,0 +1,100 @@
+# =============================================================================
+# MySQL 8 StatefulSet
+#
+# Why StatefulSet (not Deployment)?
+#   - Stable network identity (mysql-0, mysql-1, ...)
+#   - Ordered pod creation/deletion — important for database initialization
+#   - PVC is bound to the pod identity, not recreated on reschedule
+#
+# Single replica — for HA, use MySQL Operator or a managed DB service.
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+spec:
+  serviceName: mysql          # Headless service name for stable DNS
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3306
+              name: mysql
+          env:
+            # Credentials from Secret — never hardcode passwords in manifests
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MYSQL_DATABASE
+          # Resource limits prevent MySQL from consuming all node memory
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          # Liveness probe — restart pod if MySQL stops responding
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe — only route traffic when MySQL is ready
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-pvc
+---
+# Headless Service — provides stable DNS for StatefulSet pods
+# mysql-0.mysql.pdfkit.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+spec:
+  clusterIP: None   # Headless — no load balancing, direct pod DNS
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+      name: mysql

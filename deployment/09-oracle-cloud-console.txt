@@ -1,0 +1,186 @@
+ORACLE CLOUD CONSOLE — Monitoring & Managing Your VM
+======================================================
+
+Everything you can do from the OCI web console at cloud.oracle.com
+
+
+1. INSTANCE METRICS (CPU, Memory, Network)
+-------------------------------------------
+Navigate: Compute → Instances → pdfkit-server → Metrics
+
+Charts available:
+  - CPU Utilization (%)
+  - Memory Utilization (%)
+  - Network Bytes In/Out
+  - Disk Read/Write IOPS
+
+Time ranges: 1h, 6h, 1d, 7d, 30d
+
+What to watch:
+  - CPU > 80% sustained → services are overloaded
+  - Memory > 85% → risk of OOM, restart heavy services
+  - Disk IOPS spike → heavy PDF processing happening
+
+
+2. CREATE METRIC ALARMS (get email when things go wrong)
+---------------------------------------------------------
+Navigate: Observability & Management → Monitoring → Alarm Definitions
+Click "Create Alarm"
+
+Alarm 1 — High CPU:
+  Metric namespace: oci_computeagent
+  Metric name: CpuUtilization
+  Statistic: mean
+  Interval: 5 minutes
+  Condition: > 85
+  Trigger delay: 3 minutes
+  Notification: create a topic → add your email
+
+Alarm 2 — High Memory:
+  Metric name: MemoryUtilization
+  Condition: > 90
+
+Alarm 3 — Instance Down:
+  Metric name: CpuUtilization
+  Condition: absent (no data = instance is down)
+
+After creating alarms, you get email alerts automatically.
+
+
+3. STOP / START / REBOOT INSTANCE
+-----------------------------------
+Navigate: Compute → Instances → pdfkit-server
+
+Actions menu (top right):
+  - Stop: shuts down VM (data preserved, no charges for compute)
+  - Start: boots it back up
+  - Reboot: graceful restart
+  - Force Reboot: hard reset (use if VM is frozen)
+
+NOTE: Always Free instances are free whether running or stopped.
+      Stopping saves no money but is useful for maintenance.
+
+
+4. RESIZE THE INSTANCE (if you need more resources)
+-----------------------------------------------------
+Navigate: Compute → Instances → pdfkit-server → Edit
+
+You can change OCPUs and Memory within Always Free limits:
+  Max: 4 OCPUs, 24 GB RAM total across all A1 instances
+
+To resize:
+  1. Stop the instance first
+  2. Edit → change OCPU/Memory
+  3. Start the instance
+
+
+5. CREATE A SNAPSHOT / BACKUP
+-------------------------------
+Navigate: Compute → Instances → pdfkit-server
+  → Boot Volume → Create Boot Volume Backup
+
+Name: pdfkit-backup-YYYYMMDD
+Type: Full (first time), Incremental (after that)
+
+NOTE: Boot volume backups count toward your 200GB free storage.
+Keep only 1-2 recent backups to stay within free tier.
+
+To restore from backup:
+  → Boot Volume Backups → select backup → Create Instance
+
+
+6. VIEW INSTANCE CONSOLE (if SSH is broken)
+--------------------------------------------
+Navigate: Compute → Instances → pdfkit-server
+  → Console Connection → Create Console Connection
+
+This gives you browser-based terminal access even if:
+  - SSH keys are lost
+  - iptables locked you out
+  - Network config is broken
+
+
+7. BLOCK VOLUME MANAGEMENT
+----------------------------
+Navigate: Storage → Block Storage → Block Volumes
+
+Your boot volume is listed here.
+Always Free gives 200 GB total block storage.
+
+To expand boot volume (if running low on disk):
+  1. Click your boot volume
+  2. Edit → increase size (e.g. 100 GB → 150 GB)
+  3. SSH into VM and run:
+     sudo growpart /dev/sda 1
+     sudo resize2fs /dev/sda1
+  4. Verify: df -h /
+
+
+8. OBJECT STORAGE (alternative to MinIO)
+-----------------------------------------
+Navigate: Storage → Object Storage → Buckets
+
+Always Free gives 10 GB object storage.
+You could use OCI Object Storage instead of MinIO for file storage.
+
+To use OCI Object Storage with PDFKit:
+  - Create bucket: pdfkit-uploads
+  - Create bucket: pdfkit-outputs
+  - Generate API keys for your user
+  - Update minioClient.ts to use OCI S3-compatible endpoint:
+    endPoint: YOUR_NAMESPACE.compat.objectstorage.REGION.oraclecloud.com
+    useSSL: true
+    accessKey: YOUR_OCI_ACCESS_KEY
+    secretKey: YOUR_OCI_SECRET_KEY
+
+NOTE: 10 GB free is small for a PDF platform. MinIO on your VM
+is better unless you upgrade to paid OCI Object Storage.
+
+
+9. NETWORKING — VCN FLOW LOGS
+-------------------------------
+Navigate: Networking → Virtual Cloud Networks → pdfkit-vcn
+  → Flow Logs → Enable
+
+Shows all network traffic in/out of your VM.
+Useful for:
+  - Seeing which IPs are hitting your server
+  - Detecting DDoS or abuse
+  - Debugging connectivity issues
+
+
+10. COST ANALYSIS (verify you're not being charged)
+-----------------------------------------------------
+Navigate: Billing & Cost Management → Cost Analysis
+
+Set date range to current month.
+Filter by: Service = Compute
+
+Always Free resources show $0.00.
+If you see any charges:
+  - Check if you accidentally created paid resources
+  - Verify your A1 instance is within 4 OCPU / 24 GB limits
+  - Check block storage is within 200 GB total
+
+Set a budget alert:
+Navigate: Billing → Budgets → Create Budget
+  Amount: $1.00
+  Alert at: 100%
+  Email: your@email.com
+This alerts you if ANY charge appears.
+
+
+11. SSH KEY MANAGEMENT
+-----------------------
+If you lose your SSH key:
+  Navigate: Compute → Instances → pdfkit-server
+    → Console Connection (browser terminal)
+  
+  Then add a new public key:
+    sudo nano ~/.ssh/authorized_keys
+    # Paste your new public key on a new line
+    # Save and exit
+
+Or use Instance Metadata:
+  Navigate: Compute → Instances → pdfkit-server → Edit
+    → Add SSH Key → paste new public key

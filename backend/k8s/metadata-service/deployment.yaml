@@ -1,0 +1,143 @@
+# =============================================================================
+# Metadata Service Deployment
+# Handles: info (full metadata), page-count, preview (PNG thumbnail)
+# Tools: pdf-lib (npm), pdftoppm (poppler-utils)
+# Scaling: 2–8 pods on CPU > 70%
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metadata-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: metadata-service
+    app.kubernetes.io/component: metadata
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: metadata-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: metadata-service
+        app.kubernetes.io/name: metadata-service
+        app.kubernetes.io/component: metadata
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: metadata-service
+      containers:
+        - name: metadata-service
+          image: pdfkit/metadata-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3009
+              name: http
+          envFrom:
+            - configMapRef:
+                name: pdfkit-config
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdfkit-secrets
+                  key: MINIO_SECRET_KEY
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3009
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3009
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metadata-service
+  namespace: pdfkit
+  labels:
+    app.kubernetes.io/name: metadata-service
+    app.kubernetes.io/component: metadata
+spec:
+  selector:
+    app: metadata-service
+  ports:
+    - port: 3009
+      targetPort: 3009
+      name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: metadata-service-hpa
+  namespace: pdfkit
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: metadata-service
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
