@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52" width="52" height="52">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="2" y="2" width="48" height="48" rx="12" fill="url(#bg)"/>
+
+  <!-- White document body -->
+  <rect x="12" y="10" width="20" height="26" rx="3" fill="white"/>
+
+  <!-- Folded corner -->
+  <path d="M26 10 L32 16 L26 16 Z" fill="#bfdbfe"/>
+
+  <!-- Document lines -->
+  <rect x="15" y="21" width="11" height="2" rx="1" fill="#93c5fd"/>
+  <rect x="15" y="25" width="14" height="2" rx="1" fill="#93c5fd"/>
+  <rect x="15" y="29" width="9"  height="2" rx="1" fill="#93c5fd"/>
+
+  <!-- Gold star badge -->
+  <circle cx="38" cy="14" r="8" fill="#fbbf24"/>
+  <path d="M38 8.5 L39.4 12.6 L43.8 12.6 L40.2 15.1 L41.6 19.2 L38 16.7 L34.4 19.2 L35.8 15.1 L32.2 12.6 L36.6 12.6 Z" fill="white"/>
+</svg>

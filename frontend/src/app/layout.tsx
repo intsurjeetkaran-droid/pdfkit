@@ -13,6 +13,14 @@ export const metadata: Metadata = {
     description: 'All the PDF tools you need. No signup required.',
     type: 'website',
   },
+  // Tab icon — Next.js App Router picks up icon.svg automatically from /app
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
 };
 
 export const viewport: Viewport = {
